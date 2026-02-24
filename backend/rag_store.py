@@ -9,14 +9,27 @@ from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
 PERSIST_DIR = os.getenv("CHROMA_DIR", "./chroma_db")
 COLLECTION = os.getenv("CHROMA_COLLECTION", "rag_collection")
 
+"""def get_vector_store() -> Chroma:
+    embeddings = OpenAIEmbeddings(model=os.getenv("EMBED_MODEL", "text-embedding-3-small"))
+    return Chroma(
+        collection_name=COLLECTION,
+        embedding_function=embeddings,
+        persist_directory=PERSIST_DIR,
+    )
+"""
+
 def get_vector_store() -> Chroma:
-    embeddings = OpenAIEmbeddings(model=os.getenv("EMBED_MODEL", "text-embedding-3-large"))
+    embeddings = HuggingFaceEmbeddings(
+        model_name="all-MiniLM-L6-v2"
+    )
+
     return Chroma(
         collection_name=COLLECTION,
         embedding_function=embeddings,

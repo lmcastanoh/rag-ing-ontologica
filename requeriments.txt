@@ -16,3 +16,5 @@ python-dotenv==1.*
 streamlit==1.54.0
 pypdf==6.7.2
 python-dotenv==1.2.1
+sentence-transformers
+langchain-huggingface
