@@ -18,3 +18,4 @@ pypdf==6.7.2
 python-dotenv==1.2.1
 sentence-transformers
 langchain-huggingface
+grandalf

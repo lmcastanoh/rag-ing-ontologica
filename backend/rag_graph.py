@@ -54,4 +54,5 @@ def build_rag_graph():
         .add_edge("generate", END)
         .compile()
     )
+    print(graph.get_graph().draw_ascii())
     return graph
