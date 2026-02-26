@@ -1,3 +1,4 @@
+import json
 import re
 import uuid
 
@@ -137,6 +138,7 @@ if prompt:
     with st.chat_message("assistant"):
         placeholder = st.empty()
         raw = ""
+        trazabilidad_data: dict | None = None
 
         try:
             with requests.post(
@@ -156,15 +158,64 @@ if prompt:
                             current_event = None
                             continue
                         if line.startswith("event: "):
-                            current_event = line[len("event: ") :]
-                        elif line.startswith("data: ") and current_event == "token":
-                            raw += line[len("data: ") :]
-                            placeholder.markdown(_clean_markdown(raw))
+                            current_event = line[len("event: "):]
+                        elif line.startswith("data: "):
+                            data = line[len("data: "):]
+                            if current_event == "token":
+                                raw += data
+                                placeholder.markdown(_clean_markdown(raw))
+                            elif current_event == "trazabilidad":
+                                try:
+                                    trazabilidad_data = json.loads(data)
+                                except Exception:
+                                    pass
+                            elif current_event == "done":
+                                break
 
                     final_text = _clean_markdown(raw) if raw.strip() else "No response generated."
                     placeholder.markdown(final_text)
         except Exception as exc:
             final_text = f"Request failed: {exc}"
             placeholder.error(final_text)
+
+        if trazabilidad_data:
+            with st.expander("🔍 Trazabilidad de la respuesta"):
+                ruta = trazabilidad_data.get("ruta", [])
+                st.markdown(f"**Ruta del grafo:** `{' → '.join(ruta)}`")
+
+                cls = trazabilidad_data.get("clasificacion", {})
+                if cls:
+                    st.markdown(
+                        f"**Intención:** `{cls.get('intencion')}` &nbsp;|&nbsp; "
+                        f"**Requiere RAG:** `{cls.get('requiere_rag')}`"
+                    )
+                    if cls.get("marcas_mencionadas"):
+                        st.markdown(f"**Marcas:** {', '.join(cls['marcas_mencionadas'])}")
+                    if cls.get("modelos_mencionados"):
+                        st.markdown(f"**Modelos:** {', '.join(cls['modelos_mencionados'])}")
+
+                chunks = trazabilidad_data.get("chunks_recuperados", [])
+                if chunks:
+                    k = trazabilidad_data.get("k_utilizado", "-")
+                    st.markdown(f"**Chunks recuperados:** {len(chunks)} (k={k})")
+                    rows = [
+                        f"- `{c.get('source','')}` p.{c.get('page','')} "
+                        f"| {c.get('marca','')} — {c.get('modelo','')}"
+                        for c in chunks
+                    ]
+                    st.markdown("\n".join(rows))
+
+                ver = trazabilidad_data.get("verificacion", {})
+                if ver:
+                    aprobada = ver.get("aprobada")
+                    icono = "✅" if aprobada else "❌"
+                    puntuacion = ver.get("puntuacion", 0)
+                    st.markdown(
+                        f"**Verificación:** {icono} {'Aprobada' if aprobada else 'Rechazada'} "
+                        f"&nbsp;|&nbsp; Puntuación: `{puntuacion:.2f}` "
+                        f"&nbsp;|&nbsp; Reintentos: `{ver.get('reintentos', 0)}`"
+                    )
+                    if ver.get("motivo_rechazo"):
+                        st.markdown(f"**Motivo de rechazo:** {ver['motivo_rechazo']}")
 
     st.session_state.messages.append({"role": "assistant", "content": final_text})

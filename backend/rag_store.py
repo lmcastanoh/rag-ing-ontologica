@@ -41,6 +41,13 @@ def _obtener_lector_ocr() -> easyocr.Reader:
     return _lector_ocr
 
 
+def _doc_id_desde_pdf(ruta_pdf: Path) -> str:
+    """Genera un identificador estable de documento desde el nombre del archivo."""
+    stem = ruta_pdf.stem.lower()
+    stem = re.sub(r"[^a-z0-9]+", "_", stem)
+    return stem.strip("_")
+
+
 def _inferir_modelo(ruta_pdf: Path) -> str:
     """Deriva un nombre de modelo legible a partir del nombre del archivo PDF."""
     nombre = ruta_pdf.stem.lower()
@@ -90,12 +97,14 @@ def _extraer_paginas_pdf(ruta_pdf: Path) -> List[Document]:
 
                 if len(texto_nativo.strip()) >= MIN_CHARS_PARA_TEXTO:
                     texto = texto_nativo
+                    uso_ocr = False
                 else:
                     logger.info(f"  OCR página {i + 1}: {ruta_pdf.name}")
                     imagen: Image.Image = pagina.to_image(resolution=200).original
                     lector = _obtener_lector_ocr()
                     resultados = lector.readtext(np.array(imagen), detail=0, paragraph=True)
                     texto = "\n".join(resultados)
+                    uso_ocr = True
 
                 texto_limpio = _limpiar_texto(texto)
                 if texto_limpio:
@@ -107,6 +116,8 @@ def _extraer_paginas_pdf(ruta_pdf: Path) -> List[Document]:
                                 "page":   i + 1,
                                 "marca":  ruta_pdf.parent.name,
                                 "modelo": _inferir_modelo(ruta_pdf),
+                                "doc_id": _doc_id_desde_pdf(ruta_pdf),
+                                "ocr":    uso_ocr,
                             },
                         )
                     )
@@ -165,6 +176,15 @@ def ingest(data_dir: str) -> dict:
     splits = splitter.split_documents(raw_docs)
     if not splits:
         raise ValueError("Loaded documents but produced 0 chunks. Are files empty?")
+
+    # Asignar chunk_id único por documento: {doc_id}_p{page}_c{índice}
+    chunk_counter: dict[str, int] = {}
+    for chunk in splits:
+        doc_id = chunk.metadata.get("doc_id", "unknown")
+        page   = chunk.metadata.get("page", 0)
+        idx    = chunk_counter.get(doc_id, 0)
+        chunk.metadata["chunk_id"] = f"{doc_id}_p{page}_c{idx}"
+        chunk_counter[doc_id] = idx + 1
 
     vs = get_vector_store()
     ids = vs.add_documents(documents=splits)
