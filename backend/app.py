@@ -1,6 +1,7 @@
 # backend/app.py
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -54,7 +55,10 @@ async def chat_stream(req: ChatRequest):
 
         async for chunk in graph.astream(inputs, config=config, stream_mode="messages"):
             try:
-                token, _meta = chunk
+                token, meta = chunk
+                # Solo emitir tokens de los nodos generadores de respuesta
+                if meta.get("langgraph_node") not in ("generate", "generate_direct"):
+                    continue
                 if (
                     hasattr(token, "content")
                     and token.content
@@ -64,5 +68,16 @@ async def chat_stream(req: ChatRequest):
                     yield {"event": "token", "data": token.content}
             except Exception:
                 pass
+
+        # Emit trazabilidad from final graph state
+        try:
+            final_state = await graph.aget_state(config)
+            traza = final_state.values.get("trazabilidad", {})
+            if traza:
+                yield {"event": "trazabilidad", "data": json.dumps(traza, ensure_ascii=False)}
+        except Exception:
+            pass
+
+        yield {"event": "done", "data": ""}
 
     return EventSourceResponse(event_gen())
