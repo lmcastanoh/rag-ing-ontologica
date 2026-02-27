@@ -48,6 +48,12 @@ def _doc_id_desde_pdf(ruta_pdf: Path) -> str:
     return stem.strip("_")
 
 
+def _doc_id_desde_path(path: Path) -> str:
+    stem = path.stem.lower()
+    stem = re.sub(r"[^a-z0-9]+", "_", stem)
+    return stem.strip("_")
+
+
 def _inferir_modelo(ruta_pdf: Path) -> str:
     """Deriva un nombre de modelo legible a partir del nombre del archivo PDF."""
     nombre = ruta_pdf.stem.lower()
@@ -160,7 +166,16 @@ def load_files(data_dir: str) -> List[Document]:
         docs.extend(_extraer_paginas_pdf(fp))
 
     for fp in p.rglob("*.txt"):
-        docs.extend(TextLoader(str(fp), encoding="utf-8").load())
+        txt_docs = TextLoader(str(fp), encoding="utf-8").load()
+        for d in txt_docs:
+            meta = d.metadata or {}
+            meta["source"] = meta.get("source") or fp.name
+            meta["page"] = meta.get("page") or 1
+            meta["marca"] = meta.get("marca") or fp.parent.name
+            meta["modelo"] = meta.get("modelo") or _inferir_modelo(fp)
+            meta["doc_id"] = meta.get("doc_id") or _doc_id_desde_path(fp)
+            d.metadata = meta
+        docs.extend(txt_docs)
 
     return docs
 
@@ -178,13 +193,23 @@ def ingest(data_dir: str) -> dict:
         raise ValueError("Loaded documents but produced 0 chunks. Are files empty?")
 
     # Asignar chunk_id único por documento: {doc_id}_p{page}_c{índice}
+    # Ensure metadata and assign chunk_id unique per document.
     chunk_counter: dict[str, int] = {}
     for chunk in splits:
-        doc_id = chunk.metadata.get("doc_id", "unknown")
-        page   = chunk.metadata.get("page", 0)
-        idx    = chunk_counter.get(doc_id, 0)
-        chunk.metadata["chunk_id"] = f"{doc_id}_p{page}_c{idx}"
+        meta = chunk.metadata or {}
+        source = meta.get("source", "unknown")
+        doc_id = meta.get("doc_id") or _doc_id_desde_path(Path(str(source)))
+        page = meta.get("page", 1)
+        idx = chunk_counter.get(doc_id, 0)
+
+        meta["doc_id"] = doc_id
+        meta["page"] = page
+        meta["chunk_index"] = idx
+        meta["chunk_id"] = f"{doc_id}_p{page}_c{idx}"
+        chunk.metadata = meta
+
         chunk_counter[doc_id] = idx + 1
+
 
     vs = get_vector_store()
     ids = vs.add_documents(documents=splits)

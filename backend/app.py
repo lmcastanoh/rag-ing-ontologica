@@ -41,7 +41,8 @@ def ingest_route(req: IngestRequest):
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
     """
-    Streams tokens using LangGraph stream_mode="messages".
+    Streams only the final answer to avoid duplicated text when the graph retries
+    grounded generation internally.
     """
 
     async def event_gen():
@@ -53,21 +54,14 @@ async def chat_stream(req: ChatRequest):
         }
         config = {"configurable": {"thread_id": req.session_id}}
 
-        async for chunk in graph.astream(inputs, config=config, stream_mode="messages"):
-            try:
-                token, meta = chunk
-                # Solo emitir tokens de los nodos generadores de respuesta
-                if meta.get("langgraph_node") not in ("generate", "generate_direct"):
-                    continue
-                if (
-                    hasattr(token, "content")
-                    and token.content
-                    and not isinstance(token, ToolMessage)
-                    and not getattr(token, "tool_calls", None)
-                ):
-                    yield {"event": "token", "data": token.content}
-            except Exception:
-                pass
+        # Run graph to completion, then emit only final answer.
+        try:
+            final = await graph.ainvoke(inputs, config=config)
+            answer = final.get("answer", "")
+            if isinstance(answer, str) and answer.strip():
+                yield {"event": "token", "data": answer}
+        except Exception:
+            pass
 
         # Emit trazabilidad from final graph state
         try:
