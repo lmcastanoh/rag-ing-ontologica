@@ -32,6 +32,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from langchain_core.runnables import RunnableLambda
+
 from prompts import (
     CLASSIFIER_SYSTEM_PROMPT,
     CLASSIFIER_USER_TEMPLATE,
@@ -940,14 +942,65 @@ def build_rag_graph():
     graph = (
         StateGraph(RAGState)
         # Nodos
-        .add_node("classify_intent", classify_intent)
+        
+        .add_node(
+            "classify_intent",
+            RunnableLambda(classify_intent).with_config({
+                "run_name": "Intent Classifier",
+                "tags": ["rag", "intent", "classification"],
+                "metadata": {"node": "classify_intent"}
+            })
+        )
+
         .add_node("answer_general", answer_general)
-        .add_node("retrieve", retrieve)
-        .add_node("decide_tools", decide_tools)
-        .add_node("call_tools", call_tools)
+
+        .add_node(
+            "retrieve",
+            RunnableLambda(retrieve).with_config({
+                "run_name": "Retriever",
+                "tags": ["rag", "retrieval", "chroma"],
+                "metadata": {"node": "retrieve"}
+            })
+        )
+
+        .add_node(
+            "decide_tools",
+            RunnableLambda(decide_tools).with_config({
+                "run_name": "Tool Decision",
+                "tags": ["rag", "decision", "tools"],
+                "metadata": {"node": "decide_tools"}
+            })
+        )
+
+        .add_node(
+            "call_tools",
+            RunnableLambda(call_tools).with_config({
+                "run_name": "Tool Caller",
+                "tags": ["rag", "tools", "llm"],
+                "metadata": {"node": "call_tools"}
+            })
+        )
+
         .add_node("tools", tool_node)
-        .add_node("generate_grounded", generate_grounded)
-        .add_node("evaluate_grounding", evaluate_grounding)
+        
+        .add_node(
+            "generate_grounded",
+            RunnableLambda(generate_grounded).with_config({
+                "run_name": "Grounded Generator",
+                "tags": ["rag", "generation", "llm"],
+                "metadata": {"node": "generate_grounded"}
+            })
+        )
+
+        .add_node(
+            "evaluate_grounding",
+            RunnableLambda(evaluate_grounding).with_config({
+                "run_name": "Grounding Critic",
+                "tags": ["rag", "evaluation", "critic"],
+                "metadata": {"node": "evaluate_grounding"}
+            })
+        )
+        
         # Edges
         .add_edge(START, "classify_intent")
         .add_conditional_edges(
