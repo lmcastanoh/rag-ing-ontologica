@@ -1,0 +1,369 @@
+Conectando a GraphDB en http://localhost:7200/repositories/vehiculos
+Asegurate de que GraphDB este corriendo y el repositorio 'vehiculos' exista.
+
+
+[OK] INSERT DATA ejecutado: MG4_Electric añadido al grafo.
+
+[OK] DELETE DATA ejecutado: precio base de MG4 eliminado del grafo.
+
+[OK] DELETE+INSERT ejecutado: peso del ToyotaCorolla actualizado a 1340.0 kg.
+
+============================================================
+  SELECT – Todos los vehículos con marca y modelo
+============================================================
+{
+  "marca": "Mazda",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Mazda_MazdaCx5",
+  "nombreModelo": "Mazda Cx 5"
+}
+{
+  "marca": "Mazda",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Mazda_MazdaMx5",
+  "nombreModelo": "Mazda Mx 5"
+}
+{
+  "marca": "Mazda",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Mazda_M3",
+  "nombreModelo": "M3"
+}
+{
+  "marca": "Mazda",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Mazda_MazdaCx30",
+  "nombreModelo": "Mazda Cx 30"
+}
+{
+  "marca": "Mazda",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Mazda_Mazda2SedanIpm608202401",
+  "nombreModelo": "Mazda2 Sedan Ipm6 082024 01"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MgEmotor_Cybester",
+  "nombreModelo": "Cybester"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MgEmotor_Marvel",
+  "nombreModelo": "Marvel"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MgEmotor_MgRx5",
+  "nombreModelo": "Mg Rx5"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MgEmotor_MgS5",
+  "nombreModelo": "Mg S5"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MgEmotor_Mg4",
+  "nombreModelo": "Mg4"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MgEmotor_MgZsHybridMg",
+  "nombreModelo": "Mg Zs Hybrid Mg"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MgEmotor_Zs",
+  "nombreModelo": "Zs"
+}
+{
+  "marca": "Opel",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Opel_OpelGrandland",
+  "nombreModelo": "Opel Grandland"
+}
+{
+  "marca": "Opel",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Opel_OpelComboElectrica2003",
+  "nombreModelo": "Opel Combo Electrica2 003"
+}
+{
+  "marca": "Opel",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Opel_OpelMokka",
+  "nombreModelo": "Opel Mokka"
+}
+{
+  "marca": "Peugeot",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Peugeot_2008HibridaF31",
+  "nombreModelo": "2008 Hibrida F 3 1"
+}
+{
+  "marca": "Peugeot",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Peugeot_Nueva3008F21",
+  "nombreModelo": "Nueva 3008 F 2 1"
+}
+{
+  "marca": "Peugeot",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Peugeot_Partner1",
+  "nombreModelo": "Partner 1"
+}
+{
+  "marca": "Peugeot",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Peugeot_LqFichaTecnicaPeugeot408",
+  "nombreModelo": "Lq Ficha Tecnica Peugeot 408"
+}
+{
+  "marca": "Seat",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Seat_SeataronaCompressedCopy2",
+  "nombreModelo": "Seatarona Compressed Copy2"
+}
+{
+  "marca": "Seat",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Seat_SeataronafrCopy1Copy11",
+  "nombreModelo": "Seataronafr Copy1 Copy1 1"
+}
+{
+  "marca": "Seat",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Seat_SeatibizaCompressed1",
+  "nombreModelo": "Seatibiza Compressed 1"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_Fortuner",
+  "nombreModelo": "Fortuner"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_GrYaris",
+  "nombreModelo": "Gr Yaris"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_LandCruiser300",
+  "nombreModelo": "Land Cruiser 300"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_LandCruiser79",
+  "nombreModelo": "Land Cruiser 79"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_Tundra",
+  "nombreModelo": "Tundra"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_Bz4x",
+  "nombreModelo": "Bz4x"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_CorollaCross",
+  "nombreModelo": "Corolla Cross"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_CorollaSedan",
+  "nombreModelo": "Corolla Sedan"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_LandCruiser300GrS",
+  "nombreModelo": "Land Cruiser 300 Gr S"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_YarisHb",
+  "nombreModelo": "Yaris Hb"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_Yariscross",
+  "nombreModelo": "Yariscross"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_ToyotaHilux",
+  "nombreModelo": "Toyota Hilux"
+}
+{
+  "marca": "Toyota",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Toyota_Prado",
+  "nombreModelo": "Prado"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_121112025VolkswagenAmarok",
+  "nombreModelo": "12.11 1.2025 Volkswagen Amarok"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VirtusFichaTecnica",
+  "nombreModelo": "Virtus Ficha Tecnica"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenJettaGli",
+  "nombreModelo": "Volkswagen Jetta + Gli"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenJettaGli",
+  "nombreModelo": "Volkswagen Jetta Gli"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenJetta1",
+  "nombreModelo": "Volkswagen Jetta 1"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenNivusPa",
+  "nombreModelo": "Volkswagen Nivus Pa"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenPolo",
+  "nombreModelo": "Volkswagen Polo"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenPoloTrackmy25",
+  "nombreModelo": "Volkswagen Polo Trackmy25"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenSaveiroPaFichaTecnica",
+  "nombreModelo": "Volkswagen Saveiro Pa Ficha Tecnica"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenTCrossPaTsiMy25M",
+  "nombreModelo": "Volkswagen T Cross Pa Tsi My 25 M"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenTaosmy24Mex",
+  "nombreModelo": "Volkswagen Taosmy24 Mex"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenTeraMy",
+  "nombreModelo": "Volkswagen Tera My"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenTeramontFichaTecnica",
+  "nombreModelo": "Volkswagen Teramont Ficha Tecnica"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenTiguanElegance",
+  "nombreModelo": "Volkswagen Tiguan Elegance"
+}
+{
+  "marca": "Volkswagen",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#Volkswagen_VolkswagenVirtusPaFichaTecnica",
+  "nombreModelo": "Volkswagen Virtus Pa Ficha Tecnica"
+}
+{
+  "marca": "MG Emotor",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MG4_Electric",
+  "nombreModelo": "MG4 Electric"
+}
+  -> 51 resultado(s)
+
+
+============================================================
+  FILTER – Eléctricos con autonomía > 300 km
+============================================================
+{
+  "bateria": "64.0",
+  "autonomia": "435.0",
+  "vehiculo": "http://www.semanticweb.org/rag-ontologica/vehiculos#MG4_Electric",
+  "modelo": "MG4 Electric"
+}
+  -> 1 resultado(s)
+
+
+============================================================
+  ORDER BY – Vehículos ordenados por peso (ASC)
+============================================================
+{
+  "marca": "Opel",
+  "tipo": "http://www.semanticweb.org/rag-ontologica/vehiculos#VehiculoCombustion",
+  "peso": "1295.0",
+  "modelo": "Opel Mokka"
+}
+{
+  "marca": "MG Emotor",
+  "tipo": "http://www.semanticweb.org/rag-ontologica/vehiculos#VehiculoElectrico",
+  "peso": "1655.0",
+  "modelo": "MG4 Electric"
+}
+{
+  "marca": "Volkswagen",
+  "tipo": "http://www.semanticweb.org/rag-ontologica/vehiculos#VehiculoCombustion",
+  "peso": "1740.0",
+  "modelo": "Volkswagen Saveiro Pa Ficha Tecnica"
+}
+{
+  "marca": "Peugeot",
+  "tipo": "http://www.semanticweb.org/rag-ontologica/vehiculos#VehiculoCombustion",
+  "peso": "1805.0",
+  "modelo": "Nueva 3008 F 2 1"
+}
+  -> 4 resultado(s)
+
+
+============================================================
+  LIMIT – Top 3 motores mas potentes
+============================================================
+{
+  "marca": "Toyota",
+  "potencia": "204",
+  "tipoMotor": "Electrico",
+  "modelo": "Bz4x"
+}
+{
+  "marca": "MG Emotor",
+  "potencia": "170",
+  "tipoMotor": "Electrico",
+  "modelo": "Mg Rx5"
+}
+{
+  "marca": "MG Emotor",
+  "potencia": "167",
+  "tipoMotor": "Electrico",
+  "modelo": "Mg4"
+}
+  -> 3 resultado(s)
+
+
+============================================================
+  COMPARACIÓN – Eléctricos por autonomía (DESC)
+============================================================
+{
+  "marca": "MG Emotor",
+  "bateria": "64.0",
+  "autonomia": "435.0",
+  "modelo": "MG4 Electric"
+}
+  -> 1 resultado(s)
+
+
+============================================================
+  HÍBRIDOS – Toyota ordenados por consumo
+============================================================
+{
+  "modelo": "Corolla Cross"
+}
+{
+  "modelo": "Corolla Sedan"
+}
+{
+  "modelo": "Yariscross"
+}
+  -> 3 resultado(s)
+
+
+============================================================
+  MOTOR – Datos de Golf
+============================================================
+  -> 0 resultado(s)
+
