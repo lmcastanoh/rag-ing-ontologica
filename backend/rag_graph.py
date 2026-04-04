@@ -373,7 +373,7 @@ def _retrieval_context(docs: List[Document]) -> str:
     for d in docs:
         md = d.metadata or {}
         content = _fix_doubled_text(d.page_content)
-        doc_id = md.fget("doc_id") or md.get("source", "desconocido")
+        doc_id = md.get("doc_id") or md.get("source", "desconocido")
         page = md.get("page", "N/A")
         chunk_id = md.get("chunk_id")
         if chunk_id:
