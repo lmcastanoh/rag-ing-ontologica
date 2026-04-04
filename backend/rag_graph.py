@@ -373,7 +373,7 @@ def _retrieval_context(docs: List[Document]) -> str:
     for d in docs:
         md = d.metadata or {}
         content = _fix_doubled_text(d.page_content)
-        doc_id = md.get("doc_id") or md.get("source", "desconocido")
+        doc_id = md.fget("doc_id") or md.get("source", "desconocido")
         page = md.get("page", "N/A")
         chunk_id = md.get("chunk_id")
         if chunk_id:
@@ -677,8 +677,13 @@ def build_rag_graph():
                 "intent_clasificador": intent_name,
                 "intent_efectivo": effective_intent,
             }
-        return {"docs": docs, "trazabilidad": traza}
 
+        return {
+            "docs": docs,
+            "trazabilidad": traza,
+            "retrieved_docs_preview": [d.page_content[:120] for d in docs]
+        }
+    
     # ── Nodo 4: call_tools ───────────────────────────────────────────────
     def call_tools(state: RAGState) -> dict[str, Any]:
         """LLM genera tool_calls que luego ejecuta el ToolNode.
@@ -822,8 +827,9 @@ def build_rag_graph():
             "messages": [response],
             "trazabilidad": traza,
             "origen_respuesta": "generate_grounded",
+            "context_preview": combined_context[:500]
         }
-
+    
     # ── Nodo 7: evaluate_grounding ───────────────────────────────────────
     def evaluate_grounding(state: RAGState) -> dict[str, Any]:
         """Critico de grounding: evalua la calidad de la respuesta generada.
