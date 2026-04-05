@@ -794,9 +794,16 @@ def build_rag_graph():
                 "metadata": {"node": "classify_intent"}
             })
         )
-
-        .add_node("answer_general", answer_general)
-
+        
+        .add_node(
+            "answer_general",
+            RunnableLambda(answer_general).with_config({
+                "run_name": "General Answer",
+                "tags": ["rag", "no-retrieval", "llm"],
+                "metadata": {"node": "answer_general"}
+            })
+        )
+        
         .add_node(
             "react_agent",
             RunnableLambda(react_agent).with_config({
