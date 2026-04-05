@@ -64,16 +64,25 @@ with st.sidebar:
 
     st.subheader("Ingesta de documentos")
     data_dir = st.text_input("Directorio de datos", value="./data")
+    chunking_method = st.radio(
+        "Método de chunking",
+        ["Fijo (1000 chars)", "Semántico (SemanticChunker)"],
+        horizontal=True,
+    )
+    endpoint = "/ingest/semantic" if "Semántico" in chunking_method else "/ingest"
     if st.button("Ingestar", use_container_width=True):
         try:
-            r = requests.post(
-                f"{API_BASE}/ingest",
-                json={"data_dir": data_dir},
-                timeout=300,
-            )
-            if r.headers.get("content-type", "").startswith("application/json"):
+            with st.spinner("Procesando PDFs... esto puede tardar varios minutos"):
+                r = requests.post(
+                    f"{API_BASE}{endpoint}",
+                    json={"data_dir": data_dir},
+                    timeout=3600,
+                )
+            if r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json"):
                 st.success("Ingesta completada")
                 st.json(r.json())
+            elif r.headers.get("content-type", "").startswith("application/json"):
+                st.error(f"Error backend ({r.status_code}): {r.json().get('message', r.text)}")
             else:
                 st.error(f"Error backend ({r.status_code}): {r.text}")
         except Exception as exc:
@@ -154,6 +163,24 @@ if prompt:
                     if cls.get("clarification_question"):
                         st.markdown(f"**Pregunta de aclaración:** {cls.get('clarification_question')}")
 
+                react_steps = trazabilidad_data.get("react_steps", [])
+                if react_steps:
+                    react_iters = trazabilidad_data.get("react_iterations", len(react_steps))
+                    st.markdown(f"**Agente ReAct:** {react_iters} pasos")
+                    for step in react_steps:
+                        step_num = step.get("step", "?")
+                        thought = step.get("thought", "")
+                        action = step.get("action", "")
+                        action_input = step.get("action_input", {})
+                        if action == "FINISH":
+                            st.markdown(f"  {step_num}. **Thought:** {thought}\n     **Action:** `FINISH`")
+                        else:
+                            input_str = json.dumps(action_input, ensure_ascii=False) if isinstance(action_input, dict) else str(action_input)
+                            st.markdown(
+                                f"  {step_num}. **Thought:** {thought}\n"
+                                f"     **Action:** `{action}` | **Input:** `{input_str[:100]}`"
+                            )
+
                 chunks = trazabilidad_data.get("chunks_recuperados") or trazabilidad_data.get("retrieved_chunks") or []
                 if chunks:
                     k = trazabilidad_data.get("k_utilizado", trazabilidad_data.get("retrieval_k", "-"))
@@ -178,5 +205,8 @@ if prompt:
                     if issues:
                         st.markdown("**Issues:**")
                         st.markdown("\n".join([f"- {x}" for x in issues]))
+
+                if trazabilidad_data.get("web_search_used"):
+                    st.markdown("**Fuente alternativa:** Se usó búsqueda web (base de conocimiento insuficiente tras 3 reintentos)")
 
     st.session_state.messages.append({"role": "assistant", "content": final_text})

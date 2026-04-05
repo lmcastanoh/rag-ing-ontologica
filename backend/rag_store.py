@@ -33,6 +33,7 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from langchain_community.document_loaders import TextLoader
+from langchain_experimental.text_splitter import SemanticChunker
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,13 @@ logger = logging.getLogger(__name__)
 PERSIST_DIR = os.getenv("CHROMA_DIR", "./chroma_db")
 # Nombre de la coleccion en ChromaDB
 COLLECTION = os.getenv("CHROMA_COLLECTION", "rag_collection")
+
+# Instancia semantica: directorio y coleccion separados
+PERSIST_DIR_SEMANTIC = os.getenv("CHROMA_DIR_SEMANTIC", "./chroma_db_semantic")
+COLLECTION_SEMANTIC = os.getenv("CHROMA_COLLECTION_SEMANTIC", "rag_collection_semantic")
+
+# Selector de store activo: "fixed" (RecursiveCharacterTextSplitter) o "semantic" (SemanticChunker)
+ACTIVE_STORE = os.getenv("CHROMA_STORE", "fixed")
 
 # Minimo de caracteres para considerar que una pagina tiene texto nativo.
 # Paginas con menos de 50 chars se procesan con OCR.
@@ -225,13 +233,9 @@ def get_vector_store() -> Chroma:
     Returns:
         Instancia de Chroma lista para similarity_search y add_documents.
     """
-    embeddings = HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2"
-    )
-
     return Chroma(
         collection_name=COLLECTION,
-        embedding_function=embeddings,
+        embedding_function=_get_embeddings(),
         persist_directory=PERSIST_DIR,
     )
 
@@ -341,3 +345,123 @@ def ingest(data_dir: str) -> dict:
     vs = get_vector_store()
     ids = vs.add_documents(documents=splits)
     return {"files_dir": data_dir, "raw_docs": len(raw_docs), "chunks": len(splits), "ids_added": len(ids)}
+
+
+_embeddings_singleton: HuggingFaceEmbeddings | None = None
+
+
+def _get_embeddings() -> HuggingFaceEmbeddings:
+    """Retorna instancia singleton de embeddings HuggingFace (all-MiniLM-L6-v2).
+
+    Reutiliza la misma instancia para evitar que SemanticChunker cierre
+    el cliente HTTP y deje inutilizable a Chroma.
+    """
+    global _embeddings_singleton
+    if _embeddings_singleton is None:
+        _embeddings_singleton = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    return _embeddings_singleton
+
+
+def get_semantic_vector_store() -> Chroma:
+    """Retorna instancia de ChromaDB para chunks semanticos.
+
+    Usa la misma funcion de embeddings (all-MiniLM-L6-v2) pero almacena
+    en un directorio y coleccion separados para no mezclar con el store fijo.
+
+    Returns:
+        Instancia de Chroma con coleccion semantica.
+    """
+    return Chroma(
+        collection_name=COLLECTION_SEMANTIC,
+        embedding_function=_get_embeddings(),
+        persist_directory=PERSIST_DIR_SEMANTIC,
+    )
+
+
+def ingest_semantic(data_dir: str) -> dict:
+    """Pipeline de ingesta con chunking semantico: carga → SemanticChunker → embeddings → ChromaDB.
+
+    En lugar de dividir por tamano fijo (1000 chars), agrupa texto por
+    coherencia tematica usando SemanticChunker de LangChain Experimental.
+    El chunker usa los mismos embeddings (all-MiniLM-L6-v2) para detectar
+    puntos de quiebre semantico en el texto.
+
+    Args:
+        data_dir: Ruta al directorio con PDFs organizados por marca.
+
+    Returns:
+        Dict con estadisticas: files_dir, raw_docs, chunks, ids_added, chunking_method.
+
+    Raises:
+        ValueError: Si no se encuentran documentos o se producen 0 chunks.
+    """
+    raw_docs = load_files(data_dir)
+    if not raw_docs:
+        raise ValueError(
+            f"No documents loaded from data_dir={data_dir}. "
+            "Put .pdf (or .txt) files there."
+        )
+
+    # SemanticChunker agrupa texto por similitud semantica entre oraciones.
+    # breakpoint_threshold_type="percentile" corta cuando la distancia entre
+    # embeddings de oraciones consecutivas supera el percentil 85.
+    # IMPORTANTE: usar instancia SEPARADA para el chunker porque cierra
+    # el cliente HTTP internamente, lo que corrompe el singleton de Chroma.
+    chunker_embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    semantic_splitter = SemanticChunker(
+        embeddings=chunker_embeddings,
+        breakpoint_threshold_type="percentile",
+        breakpoint_threshold_amount=85,
+    )
+
+    splits = semantic_splitter.split_documents(raw_docs)
+    if not splits:
+        raise ValueError("Loaded documents but produced 0 semantic chunks. Are files empty?")
+
+    # Asignar chunk_id unico por documento: {doc_id}_p{page}_sc{indice}
+    # Prefijo 'sc' (semantic chunk) para distinguir de los chunks fijos ('c')
+    chunk_counter: dict[str, int] = {}
+    for chunk in splits:
+        meta = chunk.metadata or {}
+        source = meta.get("source", "unknown")
+        doc_id = meta.get("doc_id") or _doc_id_desde_path(Path(str(source)))
+        page = meta.get("page", 1)
+        idx = chunk_counter.get(doc_id, 0)
+
+        meta["doc_id"] = doc_id
+        meta["page"] = page
+        meta["chunk_index"] = idx
+        meta["chunk_id"] = f"{doc_id}_p{page}_sc{idx}"
+        meta["chunking"] = "semantic"
+        chunk.metadata = meta
+
+        chunk_counter[doc_id] = idx + 1
+
+    # Almacenar en la instancia semantica de ChromaDB
+    vs = get_semantic_vector_store()
+    ids = vs.add_documents(documents=splits)
+
+    logger.info(
+        f"Ingesta semantica completa: {len(raw_docs)} docs → {len(splits)} chunks semanticos"
+    )
+    return {
+        "files_dir": data_dir,
+        "raw_docs": len(raw_docs),
+        "chunks": len(splits),
+        "ids_added": len(ids),
+        "chunking_method": "semantic",
+    }
+
+
+def get_active_vector_store() -> Chroma:
+    """Retorna el vector store activo segun la variable CHROMA_STORE.
+
+    Si CHROMA_STORE="semantic", retorna la instancia semantica.
+    Si CHROMA_STORE="fixed" (default), retorna la instancia con chunks fijos.
+
+    Returns:
+        Instancia de Chroma activa.
+    """
+    if ACTIVE_STORE == "semantic":
+        return get_semantic_vector_store()
+    return get_vector_store()

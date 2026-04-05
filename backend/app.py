@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from rag_graph import build_rag_graph
-from rag_store import ingest
+from rag_store import ingest, ingest_semantic, get_vector_store, get_semantic_vector_store
 
 # Cargar .env desde la raiz del proyecto (dos niveles arriba de backend/)
 env_path = Path(__file__).resolve().parents[2] / ".env"
@@ -61,18 +61,58 @@ class IngestRequest(BaseModel):
 
 @app.post("/ingest")
 def ingest_route(req: IngestRequest):
-    """Ingesta documentos PDF a ChromaDB.
+    """Ingesta documentos PDF a ChromaDB (chunking fijo).
 
-    Proceso:
-    1. Lee PDFs del directorio indicado (texto nativo o OCR)
-    2. Divide en chunks (1000 chars, 150 overlap)
-    3. Genera embeddings con all-MiniLM-L6-v2
-    4. Almacena en ChromaDB con metadata (source, page, marca, modelo, doc_id, chunk_id)
-
-    Retorna: cantidad de documentos, chunks e IDs agregados.
+    Limpia datos existentes y re-ingesta desde el directorio indicado.
     """
-    result = ingest(req.data_dir)
-    return JSONResponse(result)
+    try:
+        vs = get_vector_store()
+        existing = vs._collection.count()
+        if existing > 0:
+            all_ids = vs._collection.get()["ids"]
+            if all_ids:
+                vs._collection.delete(ids=all_ids)
+        result = ingest(req.data_dir)
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@app.post("/ingest/semantic")
+def ingest_semantic_route(req: IngestRequest):
+    """Ingesta documentos PDF a ChromaDB (chunking semantico).
+
+    Limpia datos existentes y re-ingesta desde el directorio indicado.
+    """
+    try:
+        vs = get_semantic_vector_store()
+        existing = vs._collection.count()
+        if existing > 0:
+            all_ids = vs._collection.get()["ids"]
+            if all_ids:
+                vs._collection.delete(ids=all_ids)
+        result = ingest_semantic(req.data_dir)
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@app.delete("/ingest")
+def delete_ingest():
+    """Limpia la coleccion fija para permitir re-ingesta."""
+    import chromadb
+    client = chromadb.PersistentClient(path="./chroma_db")
+    client.delete_collection("rag_collection")
+    return JSONResponse({"status": "deleted", "collection": "rag_collection"})
+
+
+@app.delete("/ingest/semantic")
+def delete_ingest_semantic():
+    """Limpia la coleccion semantica para permitir re-ingesta."""
+    import chromadb
+    client = chromadb.PersistentClient(path="./chroma_db_semantic")
+    client.delete_collection("rag_collection_semantic")
+    return JSONResponse({"status": "deleted", "collection": "rag_collection_semantic"})
 
 
 @app.post("/chat/stream")
@@ -95,7 +135,6 @@ async def chat_stream(req: ChatRequest):
             "docs": [],
             "answer": "",
             "messages": [HumanMessage(content=req.question)],
-            "usar_tools": False,
         }
         # thread_id vincula esta invocacion a una sesion persistente (MemorySaver)
         config = {"configurable": {"thread_id": req.session_id}}
