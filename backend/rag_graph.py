@@ -958,8 +958,15 @@ def build_rag_graph():
             })
         )
 
-        .add_node("answer_general", answer_general)
-
+        .add_node(
+            "answer_general",
+            RunnableLambda(answer_general).with_config({
+                "run_name": "General Answer",
+                "tags": ["rag", "no-retrieval", "llm"],
+                "metadata": {"node": "answer_general"}
+            })
+        )
+        
         .add_node(
             "retrieve",
             RunnableLambda(retrieve).with_config({
@@ -987,7 +994,14 @@ def build_rag_graph():
             })
         )
 
-        .add_node("tools", tool_node)
+        .add_node(
+            "tools",
+            tool_node.with_config({
+                "run_name": "Tools Executor",
+                "tags": ["rag", "tools", "execution"],
+                "metadata": {"node": "tools"}
+            })
+        )
         
         .add_node(
             "generate_grounded",
