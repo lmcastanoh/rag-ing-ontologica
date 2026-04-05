@@ -83,3 +83,26 @@ def intent_to_dict(intent: IntentClassification) -> dict[str, Any]:
 def eval_to_dict(result: GroundingEvaluation) -> dict[str, Any]:
     """Convierte GroundingEvaluation a dict para almacenar en RAGState."""
     return result.model_dump()
+
+
+# ── Schemas de evaluacion ────────────────────────────────────────────────────
+
+class RetrievalMetrics(BaseModel):
+    """Metricas de calidad del retrieval (requieren ground truth)."""
+
+    recall_at_k: float = Field(ge=0.0, le=1.0)
+    precision_at_k: float = Field(ge=0.0, le=1.0)
+    mrr: float = Field(ge=0.0, le=1.0)
+    ndcg_at_k: float = Field(ge=0.0, le=1.0)
+    k: int
+
+
+class LLMJudgeMetrics(BaseModel):
+    """Metricas de calidad evaluadas por LLM-as-Judge."""
+
+    relevance_score: float = Field(ge=0.0, le=1.0)
+    relevance_justification: str
+    faithfulness_score: float = Field(ge=0.0, le=1.0)
+    supported_claims: int = Field(ge=0)
+    total_claims: int = Field(ge=0)
+    unsupported_claims: list[str] = Field(default_factory=list)

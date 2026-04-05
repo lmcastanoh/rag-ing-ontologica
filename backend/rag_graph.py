@@ -5,12 +5,13 @@
 # Arquitectura: ReAct Agent + Reflecting
 #
 # Flujo: classify_intent -> [react_agent] -> generate_grounded ->
-#        evaluate_grounding -> [retry | web_fallback | END]
+#        evaluate_grounding -> evaluate_metrics -> [retry | web_fallback | END]
 #
-# 3 rutas posibles:
-#   A) GENERAL:     classify -> answer_general -> END (sin retrieval)
-#   B) RAG + ReAct: classify -> react_agent -> generate -> evaluate -> END
-#   C) Web Fallback: ... -> evaluate (3 fallos) -> web_fallback -> END
+# 4 rutas posibles:
+#   A) GENERAL:      classify -> answer_general -> END (sin retrieval)
+#   B) RAG + ReAct:  classify -> react_agent -> generate -> evaluate -> metrics -> END
+#   C) Retry:        ... -> evaluate (rechazada) -> metrics -> generate (con feedback)
+#   D) Web Fallback: ... -> evaluate (3 fallos) -> metrics -> web_fallback -> END
 #
 # Features:
 #   - ReAct agent: razona sobre que tools usar (buscar_vectorial, hyde,
@@ -47,6 +48,8 @@ from prompts import (
     WEB_FALLBACK_SYSTEM_PROMPT,
     WEB_FALLBACK_USER_TEMPLATE,
 )
+from eval_dataset import EVAL_DATASET
+from evaluation import compute_retrieval_metrics, compute_llm_judge_metrics
 from schemas import GroundingEvaluation, IntentClassification, eval_to_dict, intent_to_dict
 from tools import (
     buscar_especificacion,
@@ -95,6 +98,7 @@ class RAGState(TypedDict):
         react_steps:     Pasos del agente ReAct (thought/action/observation).
         react_iteration: Numero de iteraciones del agente ReAct.
         web_search_used: Flag: True si se uso busqueda web como fallback.
+        eval_mode:       Flag: True activa LLM-as-Judge (solo para evaluacion batch).
     """
 
     question: str
@@ -111,6 +115,7 @@ class RAGState(TypedDict):
     react_steps: Optional[list[dict[str, Any]]]
     react_iteration: int
     web_search_used: bool
+    eval_mode: bool
 
 
 # ── Funciones auxiliares ─────────────────────────────────────────────────────
@@ -459,17 +464,41 @@ def build_rag_graph():
                 f"\nThought: {thought}\n"
                 f"Action: {action}\n"
                 f"Action Input: {json.dumps(action_input, ensure_ascii=False)}\n"
-                f"Observation: {observation_str[:800]}\n"
+                f"Observation: {observation_str[:400]}\n"
             )
 
-        # Construir Documents desde las observaciones para generate_grounded
+        # Construir Documents desde las observaciones para generate_grounded.
+        # Extraer metadata real de las cabeceras [doc_id=...; página=...] de los chunks.
         docs: List[Document] = []
         for obs in all_observations:
-            if obs.strip():
-                docs.append(Document(
-                    page_content=obs,
-                    metadata={"source": "react_agent", "doc_id": "react_agent"},
-                ))
+            if not obs.strip():
+                continue
+            # Separar bloques individuales de chunks (separados por ---)
+            blocks = re.split(r"\n-{3,}\n", obs)
+            for block in blocks:
+                block = block.strip()
+                if not block:
+                    continue
+                # Intentar extraer metadata de la cabecera del chunk
+                header_match = re.match(
+                    r"\[doc_id=([^;]+);\s*página=([^;\]]+)(?:;\s*chunk_id=([^\]]+))?\]",
+                    block,
+                )
+                if header_match:
+                    doc_id = header_match.group(1).strip()
+                    page = header_match.group(2).strip()
+                    chunk_id = header_match.group(3).strip() if header_match.group(3) else None
+                    content = block[header_match.end():].strip()
+                    meta = {"source": doc_id, "doc_id": doc_id, "page": page}
+                    if chunk_id:
+                        meta["chunk_id"] = chunk_id
+                    docs.append(Document(page_content=content or block, metadata=meta))
+                else:
+                    # Sin cabecera (output de tools como comparar/resumir)
+                    docs.append(Document(
+                        page_content=block,
+                        metadata={"source": "tool_output", "doc_id": "tool_output"},
+                    ))
 
         traza = dict(state.get("trazabilidad") or {})
         traza["ruta"] = traza.get("ruta", []) + ["react_agent"]
@@ -658,22 +687,83 @@ def build_rag_graph():
             "trazabilidad": traza,
         }
 
+    # ── Nodo 6: evaluate_metrics ───────────────────────────────────────────
+    def evaluate_metrics(state: RAGState) -> dict[str, Any]:
+        """Calcula metricas de evaluacion: retrieval + LLM-as-Judge.
+
+        Metricas de retrieval (Recall@k, Precision@k, MRR, nDCG):
+        - Se calculan si la pregunta tiene ground truth en el dataset
+        - Compara los doc_ids recuperados vs los relevantes esperados
+
+        Metricas LLM-as-Judge (Relevance, Faithfulness):
+        - Se calculan siempre que haya respuesta y contexto
+        - Relevance: la respuesta es relevante para la pregunta?
+        - Faithfulness: la respuesta es fiel al contexto (no alucina)?
+
+        Todas las metricas se agregan a trazabilidad["metricas"].
+        """
+        question = state["question"]
+        docs = state.get("docs", [])
+        answer = state.get("answer", "")
+
+        metricas: dict[str, Any] = {}
+
+        # ── Metricas de retrieval ───────────────────────────────────────
+        # Buscar ground truth para esta pregunta en el dataset
+        retrieved_doc_ids = []
+        for d in docs:
+            md = d.metadata or {}
+            doc_id = md.get("doc_id", "")
+            if doc_id and doc_id != "react_agent":
+                retrieved_doc_ids.append(doc_id)
+
+        # Buscar pregunta en dataset (matching parcial)
+        ground_truth = None
+        q_lower = question.lower()
+        for entry in EVAL_DATASET:
+            if entry["relevant_doc_ids"] and entry["question"].lower() in q_lower or q_lower in entry["question"].lower():
+                ground_truth = entry
+                break
+
+        if ground_truth and ground_truth["relevant_doc_ids"] and retrieved_doc_ids:
+            k = len(retrieved_doc_ids)
+            metricas["retrieval"] = compute_retrieval_metrics(
+                retrieved_doc_ids=retrieved_doc_ids,
+                relevant_doc_ids=ground_truth["relevant_doc_ids"],
+                k=k,
+            )
+        else:
+            metricas["retrieval"] = None
+
+        # ── Metricas LLM-as-Judge (solo en modo evaluacion) ─────────────
+        # Las llamadas LLM-as-Judge agregan ~5s de latencia.
+        # Solo se ejecutan cuando eval_mode=True (script batch o endpoint /evaluate).
+        eval_mode = state.get("eval_mode", False)
+        if eval_mode and answer.strip() and docs:
+            context = "\n\n---\n\n".join(
+                d.page_content[:500] for d in docs if d.page_content.strip()
+            )
+            metricas["llm_judge"] = compute_llm_judge_metrics(
+                question=question,
+                context=context,
+                answer=answer,
+            )
+        else:
+            metricas["llm_judge"] = None
+
+        # Agregar score del critico existente
+        eval_result = state.get("eval_result") or {}
+        metricas["grounding_score"] = eval_result.get("score", None)
+
+        traza = dict(state.get("trazabilidad") or {})
+        traza["ruta"] = traza.get("ruta", []) + ["evaluate_metrics"]
+        traza["metricas"] = metricas
+        return {"trazabilidad": traza}
+
     # ── Funciones de routing (conditional edges) ─────────────────────────
 
-    def route_after_classify(state: RAGState) -> str:
-        """Decide ruta: retrieval via ReAct o respuesta general directa."""
-        intent = state.get("intent") or {}
-        if intent.get("needs_retrieval", True):
-            return "react_agent"
-        return "answer_general"
-
-    def route_after_reflect(state: RAGState) -> str:
-        """Decide si reintentar, usar web fallback, o terminar.
-
-        - Aprobada o score >= 0.5: END
-        - Rechazada y retries < 3: generate_grounded (reintento con feedback)
-        - Rechazada y retries >= 3: web_fallback (buscar en internet)
-        """
+    def route_after_metrics(state: RAGState) -> str:
+        """Decide si reintentar, usar web fallback, o terminar despues de metricas."""
         eval_data = state.get("eval_result") or {}
         retry_count = state.get("retry_count", 0)
         rejected = not eval_data.get("approved", True) and eval_data.get("score", 1.0) < 0.5
@@ -683,6 +773,13 @@ def build_rag_graph():
         if retry_count <= MAX_RETRIES and state.get("critic_feedback"):
             return "generate_grounded"
         return "web_fallback"
+
+    def route_after_classify(state: RAGState) -> str:
+        """Decide ruta: retrieval via ReAct o respuesta general directa."""
+        intent = state.get("intent") or {}
+        if intent.get("needs_retrieval", True):
+            return "react_agent"
+        return "answer_general"
 
     # ── Ensamblaje del grafo ─────────────────────────────────────────────
 
@@ -728,6 +825,15 @@ def build_rag_graph():
         )
 
         .add_node(
+            "evaluate_metrics",
+            RunnableLambda(evaluate_metrics).with_config({
+                "run_name": "Metrics Evaluator",
+                "tags": ["rag", "metrics", "evaluation"],
+                "metadata": {"node": "evaluate_metrics"}
+            })
+        )
+
+        .add_node(
             "web_fallback",
             RunnableLambda(web_fallback).with_config({
                 "run_name": "Web Fallback",
@@ -746,9 +852,10 @@ def build_rag_graph():
         .add_edge("answer_general", END)
         .add_edge("react_agent", "generate_grounded")
         .add_edge("generate_grounded", "evaluate_grounding")
+        .add_edge("evaluate_grounding", "evaluate_metrics")
         .add_conditional_edges(
-            "evaluate_grounding",
-            route_after_reflect,
+            "evaluate_metrics",
+            route_after_metrics,
             {"generate_grounded": "generate_grounded", "web_fallback": "web_fallback", END: END},
         )
         .add_edge("web_fallback", END)

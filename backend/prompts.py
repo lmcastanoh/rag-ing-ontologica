@@ -247,3 +247,82 @@ WEB_FALLBACK_USER_TEMPLATE = """Pregunta:
 Resultados de búsqueda web:
 {web_results}
 """
+
+
+# ==============================================================================
+# LLM-AS-JUDGE: RELEVANCE
+# Usado en: evaluation.py (judge_relevance)
+# LLM: gpt-5-nano (temperature=0)
+#
+# Evalua si la respuesta es relevante para la pregunta del usuario.
+# Score 0.0 = completamente irrelevante, 1.0 = perfectamente relevante.
+# ==============================================================================
+RELEVANCE_JUDGE_SYSTEM_PROMPT = """Eres un evaluador estricto de relevancia de respuestas.
+
+Tu tarea: evaluar si la respuesta responde adecuadamente la pregunta del usuario.
+
+Criterios de evaluación:
+- 1.0: La respuesta aborda directamente la pregunta con información específica y útil.
+- 0.7-0.9: La respuesta es mayormente relevante pero le falta algún aspecto o es parcial.
+- 0.4-0.6: La respuesta toca el tema pero no responde la pregunta directamente.
+- 0.1-0.3: La respuesta tiene poca relación con la pregunta.
+- 0.0: La respuesta es completamente irrelevante o no contiene información útil.
+
+Devuelve SOLO JSON válido con este esquema exacto:
+{
+  "score": float,
+  "justification": "explicación breve de por qué se asignó este score"
+}
+"""
+
+
+RELEVANCE_JUDGE_USER_TEMPLATE = """Pregunta:
+{question}
+
+Respuesta:
+{answer}
+"""
+
+
+# ==============================================================================
+# LLM-AS-JUDGE: FAITHFULNESS
+# Usado en: evaluation.py (judge_faithfulness)
+# LLM: gpt-5-nano (temperature=0)
+#
+# Evalua si la respuesta es fiel al contexto recuperado (no alucina).
+# Extrae afirmaciones factuales y verifica cada una contra el contexto.
+# ==============================================================================
+FAITHFULNESS_JUDGE_SYSTEM_PROMPT = """Eres un evaluador estricto de fidelidad (faithfulness) de respuestas RAG.
+
+Tu tarea: verificar que CADA afirmación factual en la respuesta esté soportada por el contexto recuperado.
+
+Proceso:
+1. Extrae todas las afirmaciones factuales de la respuesta (datos numéricos, especificaciones, nombres, etc.)
+2. Verifica cada afirmación contra el contexto proporcionado.
+3. Cuenta cuántas están soportadas y cuántas no.
+4. Score = afirmaciones_soportadas / total_afirmaciones
+
+Criterios:
+- Una afirmación está "soportada" si el contexto contiene la información (exacta o equivalente).
+- Una afirmación es "no soportada" si el contexto NO contiene esa información (posible alucinación).
+- Frases genéricas o de cortesía no cuentan como afirmaciones factuales.
+
+Devuelve SOLO JSON válido con este esquema exacto:
+{
+  "score": float,
+  "supported_claims": int,
+  "total_claims": int,
+  "unsupported": ["afirmación no soportada 1", "afirmación no soportada 2"]
+}
+"""
+
+
+FAITHFULNESS_JUDGE_USER_TEMPLATE = """Pregunta:
+{question}
+
+Contexto recuperado:
+{context}
+
+Respuesta a evaluar:
+{answer}
+"""

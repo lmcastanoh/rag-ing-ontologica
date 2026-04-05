@@ -206,6 +206,41 @@ if prompt:
                         st.markdown("**Issues:**")
                         st.markdown("\n".join([f"- {x}" for x in issues]))
 
+                metricas = trazabilidad_data.get("metricas", {})
+                if metricas:
+                    st.markdown("---")
+                    st.markdown("**Métricas de Evaluación**")
+
+                    retrieval_m = metricas.get("retrieval")
+                    if retrieval_m:
+                        st.markdown(
+                            f"**Retrieval:** "
+                            f"Recall@k=`{retrieval_m['recall_at_k']:.2f}` | "
+                            f"Precision@k=`{retrieval_m['precision_at_k']:.2f}` | "
+                            f"MRR=`{retrieval_m['mrr']:.2f}` | "
+                            f"nDCG@k=`{retrieval_m['ndcg_at_k']:.2f}` "
+                            f"(k={retrieval_m['k']})"
+                        )
+
+                    judge_m = metricas.get("llm_judge")
+                    if judge_m:
+                        st.markdown(
+                            f"**LLM Judge:** "
+                            f"Relevance=`{judge_m['relevance_score']:.2f}` | "
+                            f"Faithfulness=`{judge_m['faithfulness_score']:.2f}` "
+                            f"({judge_m.get('supported_claims', 0)}/{judge_m.get('total_claims', 0)} claims soportados)"
+                        )
+                        unsupported = judge_m.get("unsupported_claims", [])
+                        if unsupported:
+                            st.markdown("**Claims no soportados:**")
+                            st.markdown("\n".join([f"- {c}" for c in unsupported]))
+                        if judge_m.get("relevance_justification"):
+                            st.markdown(f"**Justificación relevancia:** {judge_m['relevance_justification']}")
+
+                    grounding = metricas.get("grounding_score")
+                    if grounding is not None:
+                        st.markdown(f"**Grounding Score:** `{grounding:.2f}`")
+
                 if trazabilidad_data.get("web_search_used"):
                     st.markdown("**Fuente alternativa:** Se usó búsqueda web (base de conocimiento insuficiente tras 3 reintentos)")
 
