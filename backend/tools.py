@@ -2,23 +2,27 @@
 # ==============================================================================
 # Tools de LangGraph para el sistema RAG de fichas tecnicas vehiculares.
 #
-# Estas tools son invocadas por el LLM en el nodo call_tools cuando el flujo
-# pasa por Comparacion o Resumen. El ToolNode de LangGraph las ejecuta
-# automaticamente a partir de los tool_calls generados por el LLM.
-#
 # Tools disponibles:
 #   - listar_modelos_disponibles: catalogo de modelos indexados
 #   - buscar_especificacion:      dato tecnico puntual de un modelo
 #   - buscar_por_marca:           todos los modelos de una marca
 #   - comparar_modelos:           tabla comparativa entre 2 modelos
 #   - resumir_ficha:              resumen estructurado de un modelo
+#   - buscar_vectorial:           busqueda semantica en ChromaDB con filtros
+#   - buscar_hyde:                HyDE retrieval (documento hipotetico)
+#   - descomponer_pregunta:       descomposicion de preguntas complejas
+#   - buscar_web:                 busqueda en internet (fallback)
 # ==============================================================================
 from __future__ import annotations
 
+import re
+from typing import Any, List
+
+from langchain_core.documents import Document
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from rag_store import get_vector_store
+from rag_store import get_active_vector_store
 
 
 def _get_llm():
@@ -27,6 +31,65 @@ def _get_llm():
     Usa gpt-5-nano con temperature=0 para respuestas consistentes y deterministas.
     """
     return ChatOpenAI(model="gpt-5-nano", temperature=0)
+
+
+# ── Helpers compartidos (usados por tools y por rag_graph) ──────────────────
+
+def _model_variants(model: str, make: str | None = None) -> list[str]:
+    """Genera variantes normalizadas de un nombre de modelo para matching flexible.
+
+    Cubre variaciones comunes: con/sin guion, con/sin marca prefijada,
+    Title case vs original.
+    """
+    no_hyphen = model.replace("-", " ")
+    bases = {model, model.title(), no_hyphen, no_hyphen.title()}
+    variants: set[str] = set(bases)
+    if make:
+        for b in bases:
+            variants.add(f"{make} {b}")
+    return list(variants)
+
+
+def _build_retrieval_filter(entities: dict[str, Any] | None) -> dict | None:
+    """Construye filtro de metadata para ChromaDB a partir de entidades."""
+    if not entities:
+        return None
+    model = entities.get("model")
+    make = entities.get("make")
+    if model and len(model) >= 2:
+        return {"modelo": {"$in": _model_variants(model, make)}}
+    if make and len(make) >= 2:
+        return {"marca": make}
+    return None
+
+
+def _fix_doubled_text(text: str) -> str:
+    """Corrige texto con caracteres duplicados por extraccion corrupta de PDF."""
+    if len(text) < 10:
+        return text
+    sample = text[:60]
+    doubles = len(re.findall(r"([A-Za-z0-9])\1", sample))
+    alphanums = len(re.findall(r"[A-Za-z0-9]", sample))
+    if alphanums > 4 and (doubles * 2) / alphanums > 0.7:
+        return text[::2]
+    return text
+
+
+def _retrieval_context(docs: List[Document]) -> str:
+    """Formatea documentos recuperados como contexto con cabeceras de trazabilidad."""
+    blocks: list[str] = []
+    for d in docs:
+        md = d.metadata or {}
+        content = _fix_doubled_text(d.page_content)
+        doc_id = md.get("doc_id") or md.get("source", "desconocido")
+        page = md.get("page", "N/A")
+        chunk_id = md.get("chunk_id")
+        if chunk_id:
+            header = f"[doc_id={doc_id}; página={page}; chunk_id={chunk_id}]"
+        else:
+            header = f"[doc_id={doc_id}; página={page}]"
+        blocks.append(f"{header}\n{content}")
+    return "\n\n---\n\n".join(blocks)
 
 
 @tool
@@ -45,7 +108,7 @@ def listar_modelos_disponibles(marca: str = "") -> str:
     Returns:
         Lista formateada de modelos por marca, o mensaje si no hay resultados.
     """
-    vs = get_vector_store()
+    vs = get_active_vector_store()
 
     where = {"marca": marca} if marca else None
     result = vs._collection.get(where=where, include=["metadatas"])
@@ -71,8 +134,8 @@ def listar_modelos_disponibles(marca: str = "") -> str:
 def buscar_especificacion(especificacion: str, modelo: str) -> str:
     """Busca un dato tecnico puntual para un modelo especifico.
 
-    Realiza similarity search combinando la especificacion y el modelo
-    para encontrar los chunks mas relevantes (k=6).
+    Realiza busqueda MMR combinando la especificacion y el modelo
+    para encontrar los chunks mas relevantes y diversos (k=6).
 
     Usada cuando el usuario pregunta por una caracteristica tecnica concreta
     como potencia, torque, autonomia, consumo o dimensiones.
@@ -84,11 +147,13 @@ def buscar_especificacion(especificacion: str, modelo: str) -> str:
     Returns:
         Fragmentos de contexto con metadata [source, pagina], o mensaje si no hay datos.
     """
-    vs = get_vector_store()
+    vs = get_active_vector_store()
 
-    results = vs.similarity_search(
+    results = vs.max_marginal_relevance_search(
         f"{especificacion} {modelo}",
         k=6,
+        fetch_k=20,
+        lambda_mult=0.7,
     )
 
     if not results:
@@ -117,11 +182,13 @@ def buscar_por_marca(marca: str) -> str:
     Returns:
         Fragmentos de contexto con metadata [modelo, pagina], o mensaje si no hay datos.
     """
-    vs = get_vector_store()
+    vs = get_active_vector_store()
 
-    results = vs.similarity_search(
+    results = vs.max_marginal_relevance_search(
         marca,
         k=10,
+        fetch_k=30,
+        lambda_mult=0.5,
         filter={"marca": marca},
     )
 
@@ -154,11 +221,13 @@ def comparar_modelos(modelo1: str, modelo2: str) -> str:
     Returns:
         Tabla comparativa markdown o explicacion de datos faltantes.
     """
-    vs = get_vector_store()
+    vs = get_active_vector_store()
 
     def _buscar(modelo: str):
-        """Busca chunks relevantes para un modelo especifico."""
-        docs = vs.similarity_search(modelo, k=8)
+        """Busca chunks relevantes y diversos para un modelo especifico via MMR."""
+        docs = vs.max_marginal_relevance_search(
+            modelo, k=8, fetch_k=25, lambda_mult=0.5,
+        )
         return "\n\n".join(d.page_content for d in docs)
 
     ctx1 = _buscar(modelo1)
@@ -207,9 +276,11 @@ def resumir_ficha(modelo: str) -> str:
     Returns:
         Resumen estructurado en markdown o mensaje si no hay datos.
     """
-    vs = get_vector_store()
+    vs = get_active_vector_store()
 
-    docs = vs.similarity_search(modelo, k=10)
+    docs = vs.max_marginal_relevance_search(
+        modelo, k=10, fetch_k=30, lambda_mult=0.5,
+    )
 
     if not docs:
         return f"No se encontró información para el modelo '{modelo}'."
@@ -237,3 +308,153 @@ Reglas de formato:
 
     response = _get_llm().invoke(prompt)
     return str(response.content)
+
+
+# ── Nuevas tools para el agente ReAct ───────────────────────────────────────
+
+
+@tool
+def buscar_vectorial(query: str, k: int = 6, modelo: str = "", marca: str = "") -> str:
+    """Busqueda semantica en la base de conocimiento vectorial (ChromaDB).
+
+    Realiza similarity search con filtros opcionales de metadata por modelo y/o marca.
+    Genera variantes del nombre del modelo para matching flexible.
+    Si el filtro no retorna resultados, reintenta sin filtro como fallback.
+
+    Usada como herramienta principal de recuperacion de informacion.
+
+    Args:
+        query:  Texto de busqueda (pregunta o terminos tecnicos).
+        k:      Numero de chunks a recuperar (default: 6).
+        modelo: Nombre del modelo para filtrar (ej: 'Hilux', 'CX-5'). Opcional.
+        marca:  Nombre de la marca para filtrar (ej: 'Toyota', 'Mazda'). Opcional.
+
+    Returns:
+        Fragmentos de contexto con cabeceras [doc_id; pagina; chunk_id].
+    """
+    vs = get_active_vector_store()
+
+    where_filter = None
+    if modelo and len(modelo) >= 2:
+        where_filter = {"modelo": {"$in": _model_variants(modelo, marca or None)}}
+    elif marca and len(marca) >= 2:
+        where_filter = {"marca": marca}
+
+    if where_filter:
+        results = vs.max_marginal_relevance_search(
+            query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=where_filter,
+        )
+        if not results:
+            results = vs.max_marginal_relevance_search(
+                query, k=k, fetch_k=k * 3, lambda_mult=0.7,
+            )
+    else:
+        results = vs.max_marginal_relevance_search(
+            query, k=k, fetch_k=k * 3, lambda_mult=0.7,
+        )
+
+    if not results:
+        return "No se encontraron documentos relevantes en la base de conocimiento."
+
+    return _retrieval_context(results)
+
+
+@tool
+def buscar_hyde(pregunta: str, k: int = 6) -> str:
+    """HyDE (Hypothetical Document Embeddings): genera un documento hipotetico
+    y lo usa como query para busqueda semantica, mejorando la relevancia.
+
+    Proceso:
+    1. El LLM genera una respuesta hipotetica a la pregunta
+    2. Ese texto hipotetico se usa como query para similarity_search
+    3. Los documentos reales similares al hipotetico se retornan
+
+    Usada cuando la busqueda vectorial directa no retorna resultados relevantes
+    o cuando la pregunta es abstracta y necesita reformularse.
+
+    Args:
+        pregunta: Pregunta del usuario en lenguaje natural.
+        k:        Numero de chunks a recuperar (default: 6).
+
+    Returns:
+        Fragmentos de contexto encontrados via HyDE.
+    """
+    llm = _get_llm()
+
+    hypo_response = llm.invoke(
+        "Genera un parrafo tecnico breve (maximo 150 palabras) que responda "
+        "esta pregunta sobre fichas tecnicas vehiculares. Incluye especificaciones "
+        f"numericas plausibles:\n\n{pregunta}"
+    )
+    hypo_text = str(hypo_response.content)
+
+    vs = get_active_vector_store()
+    results = vs.max_marginal_relevance_search(
+        hypo_text, k=k, fetch_k=k * 3, lambda_mult=0.7,
+    )
+
+    if not results:
+        return "HyDE no encontro documentos relevantes."
+
+    return f"[HyDE] Documento hipotetico: {hypo_text[:200]}...\n\n" + _retrieval_context(results)
+
+
+@tool
+def descomponer_pregunta(pregunta: str) -> str:
+    """Descompone una pregunta compleja en 2-4 sub-preguntas mas simples y especificas.
+
+    Usada cuando la pregunta del usuario involucra multiples aspectos, modelos
+    o comparaciones complejas que se benefician de busquedas separadas.
+
+    Args:
+        pregunta: Pregunta compleja del usuario.
+
+    Returns:
+        Lista numerada de sub-preguntas.
+    """
+    llm = _get_llm()
+
+    response = llm.invoke(
+        "Descompone la siguiente pregunta sobre vehiculos en 2-4 sub-preguntas "
+        "mas simples y especificas. Cada sub-pregunta debe poder responderse "
+        "con una busqueda independiente en una base de fichas tecnicas.\n"
+        "Devuelve SOLO las sub-preguntas numeradas, sin explicacion.\n\n"
+        f"Pregunta: {pregunta}"
+    )
+    return str(response.content)
+
+
+@tool
+def buscar_web(query: str) -> str:
+    """Busca informacion en internet usando DuckDuckGo.
+
+    Usada UNICAMENTE como ultimo recurso cuando la base de conocimiento interna
+    no tiene respuesta despues de multiples reintentos.
+
+    Args:
+        query: Consulta de busqueda en lenguaje natural.
+
+    Returns:
+        Resultados de busqueda web formateados.
+    """
+    try:
+        from duckduckgo_search import DDGS
+
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=3))
+
+        if not results:
+            return "No se encontraron resultados en la web."
+
+        formatted = []
+        for r in results:
+            formatted.append(
+                f"**{r.get('title', 'Sin titulo')}**\n"
+                f"URL: {r.get('href', '')}\n"
+                f"{r.get('body', '')}"
+            )
+        return "\n\n---\n\n".join(formatted)
+    except ImportError:
+        return "Error: paquete duckduckgo-search no instalado. Ejecutar: pip install duckduckgo-search"
+    except Exception as e:
+        return f"Error en busqueda web: {e}"
