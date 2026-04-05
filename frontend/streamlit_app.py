@@ -53,8 +53,20 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "modo" not in st.session_state:
+    st.session_state.modo = "RAG (PDFs)"
 
 with st.sidebar:
+    st.subheader("Modo de búsqueda")
+    modo = st.radio(
+        "Fuente de conocimiento",
+        ["RAG (PDFs)", "KG-RAG (Knowledge Graph + PDFs)"],
+        index=0 if st.session_state.modo == "RAG (PDFs)" else 1,
+        help="RAG: busca en fichas técnicas PDF.\nKG-RAG: combina el Knowledge Graph OWL con los PDFs para respuestas más precisas.",
+    )
+    if modo != st.session_state.modo:
+        st.session_state.modo = modo
+
     st.subheader("Sesión")
     st.caption(f"session_id: {st.session_state.session_id}")
     if st.button("Nueva sesión", use_container_width=True):
@@ -103,44 +115,66 @@ if prompt:
         placeholder = st.empty()
         raw = ""
         trazabilidad_data: dict | None = None
+        usar_kg = st.session_state.modo == "KG-RAG (Knowledge Graph + PDFs)"
 
-        try:
-            with requests.post(
-                f"{API_BASE}/chat/stream",
-                json={"question": prompt, "session_id": st.session_state.session_id},
-                stream=True,
-                timeout=300,
-                headers={"Accept": "text/event-stream"},
-            ) as r:
-                if r.status_code != 200:
-                    final_text = f"Error backend ({r.status_code}): {r.text}"
-                    placeholder.error(final_text)
+        if usar_kg:
+            # ── Modo KG-RAG: POST /kg_chat (respuesta JSON, no streaming) ──
+            try:
+                with st.spinner("Consultando Knowledge Graph + PDFs..."):
+                    r = requests.post(
+                        f"{API_BASE}/kg_chat",
+                        json={"question": prompt, "session_id": st.session_state.session_id},
+                        timeout=120,
+                    )
+                if r.status_code == 200:
+                    data = r.json()
+                    final_text = _clean_markdown(data.get("answer", "Sin respuesta."))
                 else:
-                    current_event = None
-                    for line in r.iter_lines(decode_unicode=True):
-                        if not line:
-                            current_event = None
-                            continue
-                        if line.startswith("event: "):
-                            current_event = line[len("event: ") :]
-                        elif line.startswith("data: "):
-                            data = line[len("data: ") :]
-                            if current_event == "token":
-                                raw += data
-                                placeholder.markdown(_clean_markdown(raw))
-                            elif current_event == "trazabilidad":
-                                try:
-                                    trazabilidad_data = json.loads(data)
-                                except Exception:
-                                    pass
-                            elif current_event == "done":
-                                break
+                    final_text = f"Error backend ({r.status_code}): {r.text}"
+                placeholder.markdown(final_text)
+                st.caption("Fuente: Knowledge Graph (GraphDB + SPARQL) + Vector Store (ChromaDB)")
+            except Exception as exc:
+                final_text = f"Fallo de request KG: {exc}"
+                placeholder.error(final_text)
+        else:
+            # ── Modo RAG PDF: POST /chat/stream (SSE streaming) ──
+            try:
+                with requests.post(
+                    f"{API_BASE}/chat/stream",
+                    json={"question": prompt, "session_id": st.session_state.session_id},
+                    stream=True,
+                    timeout=300,
+                    headers={"Accept": "text/event-stream"},
+                ) as r:
+                    if r.status_code != 200:
+                        final_text = f"Error backend ({r.status_code}): {r.text}"
+                        placeholder.error(final_text)
+                    else:
+                        current_event = None
+                        for line in r.iter_lines(decode_unicode=True):
+                            if not line:
+                                current_event = None
+                                continue
+                            if line.startswith("event: "):
+                                current_event = line[len("event: "):]
+                            elif line.startswith("data: "):
+                                data = line[len("data: "):]
+                                if current_event == "token":
+                                    raw += data
+                                    placeholder.markdown(_clean_markdown(raw))
+                                elif current_event == "trazabilidad":
+                                    try:
+                                        trazabilidad_data = json.loads(data)
+                                    except Exception:
+                                        pass
+                                elif current_event == "done":
+                                    break
 
-                    final_text = _clean_markdown(raw) if raw.strip() else "No se generó respuesta."
-                    placeholder.markdown(final_text)
-        except Exception as exc:
-            final_text = f"Fallo de request: {exc}"
-            placeholder.error(final_text)
+                        final_text = _clean_markdown(raw) if raw.strip() else "No se generó respuesta."
+                        placeholder.markdown(final_text)
+            except Exception as exc:
+                final_text = f"Fallo de request: {exc}"
+                placeholder.error(final_text)
 
         if trazabilidad_data:
             with st.expander("🔍 Trazabilidad de la respuesta"):
