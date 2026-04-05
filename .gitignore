@@ -64,3 +64,4 @@ node_modules/
 *.pem
 *.key
 *.env.local
+*.txt.out

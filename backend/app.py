@@ -12,7 +12,14 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+# Asegura que backend/ esté en el path para imports relativos,
+# funciona tanto desde la raíz (uvicorn backend.app:app) como desde backend/
+_backend_dir = Path(__file__).resolve().parent
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -24,8 +31,8 @@ from sse_starlette.sse import EventSourceResponse
 from rag_graph import build_rag_graph
 from rag_store import ingest, ingest_semantic, get_vector_store, get_semantic_vector_store
 
-# Cargar .env desde la raiz del proyecto (dos niveles arriba de backend/)
-env_path = Path(__file__).resolve().parents[2] / ".env"
+# Cargar .env desde la raiz del proyecto (un nivel arriba de backend/)
+env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(title="LangGraph RAG API")
@@ -113,6 +120,22 @@ def delete_ingest_semantic():
     client = chromadb.PersistentClient(path="./chroma_db_semantic")
     client.delete_collection("rag_collection_semantic")
     return JSONResponse({"status": "deleted", "collection": "rag_collection_semantic"})
+
+
+@app.post("/kg_chat")
+async def kg_chat(req: ChatRequest):
+    """Chat usando el agente KG-RAG (Knowledge Graph + Vector Store).
+
+    Combina consultas SPARQL sobre GraphDB con búsqueda semántica en PDFs.
+    Retorna una respuesta estructurada con datos exactos del Knowledge Graph.
+    """
+    import asyncio
+    from kg_rag_agent import responder_con_kg
+    try:
+        respuesta = await asyncio.to_thread(responder_con_kg, req.question)
+        return JSONResponse({"answer": respuesta, "fuente": "kg_rag"})
+    except Exception as e:
+        return JSONResponse({"answer": f"Error en KG-RAG: {e}", "fuente": "kg_rag"}, status_code=500)
 
 
 @app.post("/chat/stream")

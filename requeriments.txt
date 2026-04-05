@@ -23,3 +23,7 @@ sentence-transformers
 langchain-huggingface
 grandalf
 duckduckgo-search
+
+# Knowledge Graph
+SPARQLWrapper>=2.0.0
+rdflib>=7.0.0

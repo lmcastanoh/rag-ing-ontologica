@@ -1,0 +1,1042 @@
+@prefix :     <http://www.semanticweb.org/rag-ontologica/vehiculos#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc:   <http://purl.org/dc/elements/1.1/> .
+
+# ==============================================================================
+# DECLARACION DE LA ONTOLOGIA
+# ==============================================================================
+<http://www.semanticweb.org/rag-ontologica/vehiculos>
+    a owl:Ontology ;
+    dc:title "Ontología de Vehículos Automotores"@es ;
+    dc:description "Ontología para el sistema RAG de fichas técnicas de vehículos."@es ;
+    owl:versionInfo "1.0" .
+
+
+# ==============================================================================
+# CLASES (12 clases)
+# ==============================================================================
+
+:Vehiculo a owl:Class ;
+    rdfs:label "Vehículo"@es ;
+    rdfs:comment "Clase raíz que representa cualquier vehículo automotor."@es .
+
+# Jerarquía 1
+:VehiculoCombustion a owl:Class ;
+    rdfs:subClassOf :Vehiculo ;
+    rdfs:label "Vehículo de Combustión"@es .
+
+# Jerarquía 2
+:VehiculoElectrico a owl:Class ;
+    rdfs:subClassOf :Vehiculo ;
+    rdfs:label "Vehículo Eléctrico"@es .
+
+# Jerarquía 3
+:VehiculoHibrido a owl:Class ;
+    rdfs:subClassOf :Vehiculo ;
+    rdfs:label "Vehículo Híbrido"@es .
+
+:Fabricante a owl:Class ;
+    rdfs:label "Fabricante"@es .
+
+:Motor a owl:Class ;
+    rdfs:label "Motor"@es .
+
+# Jerarquía 4
+:MotorCombustion a owl:Class ;
+    rdfs:subClassOf :Motor ;
+    rdfs:label "Motor de Combustión Interna"@es .
+
+# Jerarquía 5
+:MotorElectrico a owl:Class ;
+    rdfs:subClassOf :Motor ;
+    rdfs:label "Motor Eléctrico"@es .
+
+:Transmision a owl:Class ;
+    rdfs:label "Transmisión"@es .
+
+:CategoriaVehiculo a owl:Class ;
+    rdfs:label "Categoría de Vehículo"@es .
+
+:TipoCombustible a owl:Class ;
+    rdfs:label "Tipo de Combustible"@es .
+
+:SistemaSeguridad a owl:Class ;
+    rdfs:label "Sistema de Seguridad"@es .
+
+
+# ==============================================================================
+# CLASES DISJUNTAS (2 casos)
+# ==============================================================================
+
+[] a owl:AllDisjointClasses ;
+    owl:members ( :MotorCombustion :MotorElectrico ) .
+
+[] a owl:AllDisjointClasses ;
+    owl:members ( :VehiculoCombustion :VehiculoElectrico ) .
+
+
+# ==============================================================================
+# CONSTRUCTOR LÓGICO: owl:intersectionOf
+# ==============================================================================
+:VehiculoHibrido owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+        :Vehiculo
+        [ a owl:Restriction ;
+          owl:onProperty :tieneMotor ;
+          owl:someValuesFrom :MotorCombustion ]
+        [ a owl:Restriction ;
+          owl:onProperty :tieneMotor ;
+          owl:someValuesFrom :MotorElectrico ]
+    )
+] .
+
+
+# ==============================================================================
+# PROPIEDADES DE OBJETO
+# ==============================================================================
+
+:fabricadoPor a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :Fabricante ;
+    rdfs:label  "fabricado por"@es .
+
+# inverseOf 1
+:fabricaVehiculo a owl:ObjectProperty ;
+    owl:inverseOf :fabricadoPor ;
+    rdfs:domain  :Fabricante ;
+    rdfs:range   :Vehiculo ;
+    rdfs:label   "fabrica vehículo"@es .
+
+:tieneMotor a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :Motor ;
+    rdfs:label  "tiene motor"@es .
+
+# inverseOf 2
+:estaInstalladoEn a owl:ObjectProperty ;
+    owl:inverseOf :tieneMotor ;
+    rdfs:domain   :Motor ;
+    rdfs:range    :Vehiculo ;
+    rdfs:label    "está instalado en"@es .
+
+# Jerarquía de propiedades 1
+:tieneMotorCombustion a owl:ObjectProperty ;
+    rdfs:subPropertyOf :tieneMotor ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :MotorCombustion ;
+    rdfs:label  "tiene motor de combustión"@es .
+
+# Jerarquía de propiedades 2
+:tieneMotorElectrico a owl:ObjectProperty ;
+    rdfs:subPropertyOf :tieneMotor ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :MotorElectrico ;
+    rdfs:label  "tiene motor eléctrico"@es .
+
+:tieneTransmision a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :Transmision ;
+    rdfs:label  "tiene transmisión"@es .
+
+:perteneceACategoria a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :CategoriaVehiculo ;
+    rdfs:label  "pertenece a categoría"@es .
+
+:usaCombustible a owl:ObjectProperty ;
+    rdfs:domain :MotorCombustion ;
+    rdfs:range  :TipoCombustible ;
+    rdfs:label  "usa combustible"@es .
+
+:tieneSistemaSeguridad a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :SistemaSeguridad ;
+    rdfs:label  "tiene sistema de seguridad"@es .
+
+
+# ==============================================================================
+# PROPIEDADES DE DATOS (con rangos XML Schema)
+# ==============================================================================
+
+:tieneNombreModelo a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:string .
+
+:tieneMarca a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:string .
+
+:tieneAnyoLanzamiento a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:gYear .
+
+:tienePotenciaCV a owl:DatatypeProperty ;
+    rdfs:domain :Motor ;
+    rdfs:range  xsd:integer .
+
+:tienePeso a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneAutonomiaKm a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneCapacidadBateriaKwh a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneConsumoL100km a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneLongitudMm a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:integer .
+
+:tieneCapacidadBaulL a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:integer .
+
+:tieneCilindradaCc a owl:DatatypeProperty ;
+    rdfs:domain :MotorCombustion ;
+    rdfs:range  xsd:integer .
+
+:tienePrecioBase a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+
+# ==============================================================================
+# RESTRICCIONES DE PROPIEDAD
+# ==============================================================================
+
+# Restricción universal (owl:allValuesFrom)
+:VehiculoElectrico rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty    :tieneMotor ;
+    owl:allValuesFrom :MotorElectrico
+] .
+
+# Restricción existencial (owl:someValuesFrom)
+:Vehiculo rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty     :fabricadoPor ;
+    owl:someValuesFrom :Fabricante
+] .
+
+# Restricción de cardinalidad máxima (owl:maxCardinality)
+:Vehiculo rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty    :fabricadoPor ;
+    owl:maxCardinality "1"^^xsd:nonNegativeInteger
+] .
+
+# ====[ INDIVIDUOS GENERADOS AUTOMÁTICAMENTE ]==============================
+
+# Generado automáticamente desde ChromaDB. No editar manualmente.
+
+
+# ==============================================================================
+# INDIVIDUOS FIJOS — FABRICANTES
+# ==============================================================================
+:Toyota      a :Fabricante ; rdfs:label "Toyota"@es .
+:Mazda       a :Fabricante ; rdfs:label "Mazda"@es .
+:Volkswagen  a :Fabricante ; rdfs:label "Volkswagen"@es .
+:Peugeot     a :Fabricante ; rdfs:label "Peugeot"@es .
+:Opel        a :Fabricante ; rdfs:label "Opel"@es .
+:Seat        a :Fabricante ; rdfs:label "SEAT"@es .
+:MGMotor     a :Fabricante ; rdfs:label "MG Emotor"@es .
+
+# CATEGORÍAS
+:Sedan      a :CategoriaVehiculo ; rdfs:label "Sedán"@es .
+:SUV        a :CategoriaVehiculo ; rdfs:label "SUV"@es .
+:Hatchback  a :CategoriaVehiculo ; rdfs:label "Hatchback"@es .
+:Berlina    a :CategoriaVehiculo ; rdfs:label "Berlina"@es .
+:Crossover  a :CategoriaVehiculo ; rdfs:label "Crossover"@es .
+:Compacto   a :CategoriaVehiculo ; rdfs:label "Compacto"@es .
+:Pickup     a :CategoriaVehiculo ; rdfs:label "Pickup"@es .
+:Furgoneta  a :CategoriaVehiculo ; rdfs:label "Furgoneta / Van"@es .
+:Deportivo  a :CategoriaVehiculo ; rdfs:label "Deportivo"@es .
+:Coupe      a :CategoriaVehiculo ; rdfs:label "Coupé"@es .
+
+# COMBUSTIBLES
+:Gasolina   a :TipoCombustible ; rdfs:label "Gasolina"@es .
+:Diesel     a :TipoCombustible ; rdfs:label "Diésel"@es .
+:GLP        a :TipoCombustible ; rdfs:label "Gas Licuado (GLP)"@es .
+:GNC        a :TipoCombustible ; rdfs:label "Gas Natural Comprimido (GNC)"@es .
+
+# TRANSMISIONES
+:Manual6V       a :Transmision ; rdfs:label "Manual 6 velocidades"@es .
+:AutomaticoCVT  a :Transmision ; rdfs:label "Automático CVT"@es .
+:AutomaticoDSG  a :Transmision ; rdfs:label "Automático DSG (doble embrague)"@es .
+:Manual5V       a :Transmision ; rdfs:label "Manual 5 velocidades"@es .
+:TransmisionEV  a :Transmision ; rdfs:label "Transmisión eléctrica directa"@es .
+
+# SISTEMAS DE SEGURIDAD
+:SistABS            a :SistemaSeguridad ; rdfs:label "ABS – Antibloqueo de frenos"@es .
+:SistESP            a :SistemaSeguridad ; rdfs:label "ESP – Control de estabilidad"@es .
+:SistFrenEmergencia a :SistemaSeguridad ; rdfs:label "Frenada de emergencia (AEB)"@es .
+:SistControlCrucero a :SistemaSeguridad ; rdfs:label "Control de crucero adaptativo"@es .
+:SistAlertaColision a :SistemaSeguridad ; rdfs:label "Alerta de colisión frontal"@es .
+
+
+# ==============================================================================
+
+# VEHÍCULOS Y MOTORES (datos reales de los PDFs)
+
+# ==============================================================================
+
+# --- Mazda · Mazda Cx 5 ---
+:Trans_Automatico a :Transmision ;
+    rdfs:label "Automático"@es .
+
+:Motor_Mazda_MazdaCx5_Comb a :MotorCombustion ;
+    :tieneCilindradaCc 2000 ;
+    :usaCombustible    :Gasolina .
+
+:Mazda_MazdaCx5 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Mazda Cx 5" ;
+    :tieneMarca           "Mazda" ;
+    :fabricadoPor         :Mazda ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Trans_Automatico ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Mazda_MazdaCx5_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Mazda · Mazda Mx 5 ---
+:Motor_Mazda_MazdaMx5_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Mazda_MazdaMx5 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Mazda Mx 5" ;
+    :tieneMarca           "Mazda" ;
+    :fabricadoPor         :Mazda ;
+    :perteneceACategoria  :Deportivo ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Mazda_MazdaMx5_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Mazda · M3 ---
+:Trans_Automatico6Velocidades a :Transmision ;
+    rdfs:label "Automático 6 velocidades"@es .
+
+:Motor_Mazda_M3_Comb a :MotorCombustion ;
+    :tieneCilindradaCc 2000 ;
+    :usaCombustible    :Gasolina .
+
+:Mazda_M3 a :VehiculoCombustion ;
+    :tieneNombreModelo    "M3" ;
+    :tieneMarca           "Mazda" ;
+    :fabricadoPor         :Mazda ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Trans_Automatico6Velocidades ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Mazda_M3_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Mazda · Mazda Cx 30 ---
+:Trans_Automatico6Velocidades a :Transmision ;
+    rdfs:label "Automático 6 velocidades"@es .
+
+:Motor_Mazda_MazdaCx30_Comb a :MotorCombustion ;
+    :tieneCilindradaCc 2000 ;
+    :usaCombustible    :Gasolina .
+
+:Mazda_MazdaCx30 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Mazda Cx 30" ;
+    :tieneMarca           "Mazda" ;
+    :fabricadoPor         :Mazda ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Trans_Automatico6Velocidades ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Mazda_MazdaCx30_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Mazda · Mazda2 Sedan Ipm6 082024 01 ---
+:Motor_Mazda_Mazda2SedanIpm608202401_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Mazda_Mazda2SedanIpm608202401 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Mazda2 Sedan Ipm6 082024 01" ;
+    :tieneMarca           "Mazda" ;
+    :fabricadoPor         :Mazda ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Mazda_Mazda2SedanIpm608202401_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- MG Emotor · Cybester ---
+:Motor_MgEmotor_Cybester_Elec a :MotorElectrico ;
+.
+
+:MgEmotor_Cybester a :VehiculoElectrico ;
+    :tieneNombreModelo    "Cybester" ;
+    :tieneMarca           "MG Emotor" ;
+    :fabricadoPor         :MGMotor ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneLongitudMm      4535 ;
+    :tieneCapacidadBaulL  249 ;
+    :tieneMotorElectrico     :Motor_MgEmotor_Cybester_Elec ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- MG Emotor · Marvel ---
+:Motor_MgEmotor_Marvel_Elec a :MotorElectrico ;
+.
+
+:MgEmotor_Marvel a :VehiculoElectrico ;
+    :tieneNombreModelo    "Marvel" ;
+    :tieneMarca           "MG Emotor" ;
+    :fabricadoPor         :MGMotor ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneMotorElectrico     :Motor_MgEmotor_Marvel_Elec ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- MG Emotor · Mg Rx5 ---
+:Motor_MgEmotor_MgRx5_Elec a :MotorElectrico ;
+    :tienePotenciaCV 170 .
+
+:MgEmotor_MgRx5 a :VehiculoElectrico ;
+    :tieneNombreModelo    "Mg Rx5" ;
+    :tieneMarca           "MG Emotor" ;
+    :fabricadoPor         :MGMotor ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :AutomaticoDSG ;
+    :tieneLongitudMm      4571 ;
+    :tieneCapacidadBaulL  430 ;
+    :tieneMotorElectrico     :Motor_MgEmotor_MgRx5_Elec ;
+    :tieneSistemaSeguridad :SistESP, :SistABS .
+
+# --- MG Emotor · Mg S5 ---
+:Motor_MgEmotor_MgS5_Elec a :MotorElectrico ;
+.
+
+:MgEmotor_MgS5 a :VehiculoElectrico ;
+    :tieneNombreModelo    "Mg S5" ;
+    :tieneMarca           "MG Emotor" ;
+    :fabricadoPor         :MGMotor ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneMotorElectrico     :Motor_MgEmotor_MgS5_Elec ;
+    :tieneSistemaSeguridad :SistESP, :SistABS .
+
+# --- MG Emotor · Mg4 ---
+:Motor_MgEmotor_Mg4_Elec a :MotorElectrico ;
+    :tienePotenciaCV 167 .
+
+:MgEmotor_Mg4 a :VehiculoElectrico ;
+    :tieneNombreModelo    "Mg4" ;
+    :tieneMarca           "MG Emotor" ;
+    :fabricadoPor         :MGMotor ;
+    :perteneceACategoria  :Crossover ;
+    :tieneTransmision     :TransmisionEV ;
+    :tieneAutonomiaKm     330.0 ;
+    :tieneMotorElectrico   :Motor_MgEmotor_Mg4_Elec ;
+    :tieneSistemaSeguridad :SistABS, :SistESP, :SistFrenEmergencia .
+
+# --- MG Emotor · Mg Zs Hybrid Mg ---
+:Motor_MgEmotor_MgZsHybridMg_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Motor_MgEmotor_MgZsHybridMg_Elec a :MotorElectrico ;
+    rdfs:label "Motor eléctrico"@es .
+
+:MgEmotor_MgZsHybridMg a :VehiculoHibrido ;
+    :tieneNombreModelo    "Mg Zs Hybrid Mg" ;
+    :tieneMarca           "MG Emotor" ;
+    :fabricadoPor         :MGMotor ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneMotorCombustion    :Motor_MgEmotor_MgZsHybridMg_Comb ;
+    :tieneMotorElectrico   :Motor_MgEmotor_MgZsHybridMg_Elec ;
+    :tieneSistemaSeguridad :SistESP, :SistControlCrucero, :SistFrenEmergencia, :SistABS .
+
+# --- MG Emotor · Zs ---
+:Motor_MgEmotor_Zs_Elec a :MotorElectrico ;
+.
+
+:MgEmotor_Zs a :VehiculoElectrico ;
+    :tieneNombreModelo    "Zs" ;
+    :tieneMarca           "MG Emotor" ;
+    :fabricadoPor         :MGMotor ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneLongitudMm      4314 ;
+    :tieneCapacidadBaulL  448 ;
+    :tieneMotorElectrico     :Motor_MgEmotor_Zs_Elec ;
+    :tieneSistemaSeguridad :SistESP, :SistABS .
+
+# --- Opel · Opel Grandland ---
+:Trans_AutomaticoAt6 a :Transmision ;
+    rdfs:label "Automático AT6"@es .
+
+:Motor_Opel_OpelGrandland_Comb a :MotorCombustion ;
+    :tieneCilindradaCc 1600 ;
+    :usaCombustible    :Gasolina .
+
+:Opel_OpelGrandland a :VehiculoCombustion ;
+    :tieneNombreModelo    "Opel Grandland" ;
+    :tieneMarca           "Opel" ;
+    :fabricadoPor         :Opel ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Trans_AutomaticoAt6 ;
+    :tieneMotorCombustion    :Motor_Opel_OpelGrandland_Comb ;
+    :tieneSistemaSeguridad :SistControlCrucero, :SistABS .
+
+# --- Opel · Opel Combo Electrica2 003 ---
+:Motor_Opel_OpelComboElectrica2003_Elec a :MotorElectrico ;
+    rdfs:label "Motor eléctrico"@es .
+
+:Opel_OpelComboElectrica2003 a :VehiculoElectrico ;
+    :tieneNombreModelo    "Opel Combo Electrica2 003" ;
+    :tieneMarca           "Opel" ;
+    :fabricadoPor         :Opel ;
+    :perteneceACategoria  :Furgoneta ;
+    :tieneTransmision     :TransmisionEV ;
+    :tieneMotorElectrico   :Motor_Opel_OpelComboElectrica2003_Elec ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Opel · Opel Mokka ---
+:Trans_Automatica8VelocidadesQuickshiftEToggle a :Transmision ;
+    rdfs:label "Automática 8 velocidades QuickShift / e-toggle"@es .
+
+:Motor_Opel_OpelMokka_Comb a :MotorCombustion ;
+    :tienePotenciaCV   130 ;
+    :usaCombustible    :Gasolina .
+
+:Opel_OpelMokka a :VehiculoCombustion ;
+    :tieneNombreModelo    "Opel Mokka" ;
+    :tieneMarca           "Opel" ;
+    :fabricadoPor         :Opel ;
+    :perteneceACategoria  :Crossover ;
+    :tieneTransmision     :Trans_Automatica8VelocidadesQuickshiftEToggle ;
+    :tienePeso            1295.0 ;
+    :tieneLongitudMm      4151 ;
+    :tieneCapacidadBaulL  350 ;
+    :tieneMotorCombustion    :Motor_Opel_OpelMokka_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Peugeot · 2008 Hibrida F 3 1 ---
+:Motor_Peugeot_2008HibridaF31_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Motor_Peugeot_2008HibridaF31_Elec a :MotorElectrico ;
+    rdfs:label "Motor eléctrico"@es .
+
+:Peugeot_2008HibridaF31 a :VehiculoHibrido ;
+    :tieneNombreModelo    "2008 Hibrida F 3 1" ;
+    :tieneMarca           "Peugeot" ;
+    :fabricadoPor         :Peugeot ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneLongitudMm      4304 ;
+    :tieneCapacidadBaulL  434 ;
+    :tieneMotorCombustion    :Motor_Peugeot_2008HibridaF31_Comb ;
+    :tieneMotorElectrico   :Motor_Peugeot_2008HibridaF31_Elec ;
+    :tieneSistemaSeguridad :SistFrenEmergencia, :SistABS, :SistESP .
+
+# --- Peugeot · Nueva 3008 F 2 1 ---
+:Motor_Peugeot_Nueva3008F21_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Peugeot_Nueva3008F21 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Nueva 3008 F 2 1" ;
+    :tieneMarca           "Peugeot" ;
+    :fabricadoPor         :Peugeot ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tienePeso            1805.0 ;
+    :tieneLongitudMm      4542 ;
+    :tieneCapacidadBaulL  588 ;
+    :tieneMotorCombustion    :Motor_Peugeot_Nueva3008F21_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Peugeot · Partner 1 ---
+:Motor_Peugeot_Partner1_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Peugeot_Partner1 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Partner 1" ;
+    :tieneMarca           "Peugeot" ;
+    :fabricadoPor         :Peugeot ;
+    :perteneceACategoria  :Furgoneta ;
+    :tieneTransmision     :Manual6V ;
+    :tieneMotorCombustion    :Motor_Peugeot_Partner1_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Peugeot · Lq Ficha Tecnica Peugeot 408 ---
+:Motor_Peugeot_LqFichaTecnicaPeugeot408_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Peugeot_LqFichaTecnicaPeugeot408 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Lq Ficha Tecnica Peugeot 408" ;
+    :tieneMarca           "Peugeot" ;
+    :fabricadoPor         :Peugeot ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual6V ;
+    :tieneMotorCombustion    :Motor_Peugeot_LqFichaTecnicaPeugeot408_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Seat · Seatarona Compressed Copy2 ---
+:Trans_AutomaticaTiptronicDe6Vel a :Transmision ;
+    rdfs:label "Automática Tiptronic de 6 Vel."@es .
+
+:Motor_Seat_SeataronaCompressedCopy2_Comb a :MotorCombustion ;
+    :tienePotenciaCV   110 ;
+    :tieneCilindradaCc 1598 ;
+    :usaCombustible    :Gasolina .
+
+:Seat_SeataronaCompressedCopy2 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Seatarona Compressed Copy2" ;
+    :tieneMarca           "Seat" ;
+    :fabricadoPor         :Seat ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Trans_AutomaticaTiptronicDe6Vel ;
+    :tieneAnyoLanzamiento "2026"^^xsd:gYear ;
+    :tieneCapacidadBaulL  400 ;
+    :tieneMotorCombustion    :Motor_Seat_SeataronaCompressedCopy2_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Seat · Seataronafr Copy1 Copy1 1 ---
+:Trans_AutomaticaTiptronicDe6Vel a :Transmision ;
+    rdfs:label "Automática Tiptronic de 6 Vel."@es .
+
+:Motor_Seat_SeataronafrCopy1Copy11_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Seat_SeataronafrCopy1Copy11 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Seataronafr Copy1 Copy1 1" ;
+    :tieneMarca           "Seat" ;
+    :fabricadoPor         :Seat ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Trans_AutomaticaTiptronicDe6Vel ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneCapacidadBaulL  400 ;
+    :tieneMotorCombustion    :Motor_Seat_SeataronafrCopy1Copy11_Comb ;
+    :tieneSistemaSeguridad :SistESP, :SistABS .
+
+# --- Seat · Seatibiza Compressed 1 ---
+:Trans_AutomaticaTiptronicDe6Vel a :Transmision ;
+    rdfs:label "Automática Tiptronic de 6 Vel."@es .
+
+:Motor_Seat_SeatibizaCompressed1_Comb a :MotorCombustion ;
+    :tienePotenciaCV   110 ;
+    :tieneCilindradaCc 1598 ;
+    :usaCombustible    :Gasolina .
+
+:Seat_SeatibizaCompressed1 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Seatibiza Compressed 1" ;
+    :tieneMarca           "Seat" ;
+    :fabricadoPor         :Seat ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Trans_AutomaticaTiptronicDe6Vel ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneCapacidadBaulL  355 ;
+    :tieneMotorCombustion    :Motor_Seat_SeatibizaCompressed1_Comb ;
+    :tieneSistemaSeguridad :SistESP, :SistABS .
+
+# --- Toyota · Fortuner ---
+:Motor_Toyota_Fortuner_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_Fortuner a :VehiculoCombustion ;
+    :tieneNombreModelo    "Fortuner" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2026"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_Fortuner_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Toyota · Gr Yaris ---
+:Motor_Toyota_GrYaris_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_GrYaris a :VehiculoCombustion ;
+    :tieneNombreModelo    "Gr Yaris" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2022"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_GrYaris_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Land Cruiser 300 ---
+:Motor_Toyota_LandCruiser300_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_LandCruiser300 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Land Cruiser 300" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_LandCruiser300_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Toyota · Land Cruiser 79 ---
+:Motor_Toyota_LandCruiser79_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_LandCruiser79 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Land Cruiser 79" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :Pickup ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_LandCruiser79_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Tundra ---
+:Motor_Toyota_Tundra_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_Tundra a :VehiculoCombustion ;
+    :tieneNombreModelo    "Tundra" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :Pickup ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_Tundra_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Bz4x ---
+:Motor_Toyota_Bz4x_Elec a :MotorElectrico ;
+    :tienePotenciaCV 204 .
+
+:Toyota_Bz4x a :VehiculoElectrico ;
+    :tieneNombreModelo    "Bz4x" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :TransmisionEV ;
+    :tieneAnyoLanzamiento "2026"^^xsd:gYear ;
+    :tieneMotorElectrico   :Motor_Toyota_Bz4x_Elec ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Corolla Cross ---
+:Motor_Toyota_CorollaCross_Elec a :MotorElectrico ;
+    :tienePotenciaCV 88 .
+
+:Toyota_CorollaCross a :VehiculoHibrido ;
+    :tieneNombreModelo    "Corolla Cross" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2026"^^xsd:gYear ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Corolla Sedan ---
+:Motor_Toyota_CorollaSedan_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Motor_Toyota_CorollaSedan_Elec a :MotorElectrico ;
+    rdfs:label "Motor eléctrico"@es .
+
+:Toyota_CorollaSedan a :VehiculoHibrido ;
+    :tieneNombreModelo    "Corolla Sedan" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :AutomaticoCVT ;
+    :tieneMotorCombustion    :Motor_Toyota_CorollaSedan_Comb ;
+    :tieneMotorElectrico   :Motor_Toyota_CorollaSedan_Elec ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Toyota · Land Cruiser 300 Gr S ---
+:Motor_Toyota_LandCruiser300GrS_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_LandCruiser300GrS a :VehiculoCombustion ;
+    :tieneNombreModelo    "Land Cruiser 300 Gr S" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_LandCruiser300GrS_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Yaris Hb ---
+:Motor_Toyota_YarisHb_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_YarisHb a :VehiculoCombustion ;
+    :tieneNombreModelo    "Yaris Hb" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :Hatchback ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2023"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_YarisHb_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Yariscross ---
+:Motor_Toyota_Yariscross_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Motor_Toyota_Yariscross_Elec a :MotorElectrico ;
+    rdfs:label "Motor eléctrico"@es .
+
+:Toyota_Yariscross a :VehiculoHibrido ;
+    :tieneNombreModelo    "Yariscross" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2026"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_Yariscross_Comb ;
+    :tieneMotorElectrico   :Motor_Toyota_Yariscross_Elec ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Toyota · Toyota Hilux ---
+:Motor_Toyota_ToyotaHilux_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_ToyotaHilux a :VehiculoCombustion ;
+    :tieneNombreModelo    "Toyota Hilux" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :Pickup ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2026"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_ToyotaHilux_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Toyota · Prado ---
+:Motor_Toyota_Prado_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Toyota_Prado a :VehiculoCombustion ;
+    :tieneNombreModelo    "Prado" ;
+    :tieneMarca           "Toyota" ;
+    :fabricadoPor         :Toyota ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2026"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Toyota_Prado_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Volkswagen · 12.11 1.2025 Volkswagen Amarok ---
+:Motor_Volkswagen_121112025VolkswagenAmarok_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_121112025VolkswagenAmarok a :VehiculoCombustion ;
+    :tieneNombreModelo    "12.11 1.2025 Volkswagen Amarok" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Pickup ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_121112025VolkswagenAmarok_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Virtus Ficha Tecnica ---
+:Motor_Volkswagen_VirtusFichaTecnica_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VirtusFichaTecnica a :VehiculoCombustion ;
+    :tieneNombreModelo    "Virtus Ficha Tecnica" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VirtusFichaTecnica_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Volkswagen · Volkswagen Jetta + Gli ---
+:Volkswagen_VolkswagenJettaGli a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Jetta + Gli" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Volkswagen Jetta Gli ---
+:Motor_Volkswagen_VolkswagenJettaGli_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenJettaGli a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Jetta Gli" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenJettaGli_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Volkswagen Jetta 1 ---
+:Motor_Volkswagen_VolkswagenJetta1_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenJetta1 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Jetta 1" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenJetta1_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Volkswagen Nivus Pa ---
+:Motor_Volkswagen_VolkswagenNivusPa_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenNivusPa a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Nivus Pa" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenNivusPa_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Volkswagen Polo ---
+:Motor_Volkswagen_VolkswagenPolo_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenPolo a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Polo" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenPolo_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Volkswagen · Volkswagen Polo Trackmy25 ---
+:Motor_Volkswagen_VolkswagenPoloTrackmy25_Comb a :MotorCombustion ;
+    :tienePotenciaCV   108 ;
+    :tieneCilindradaCc 1598 ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenPoloTrackmy25 a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Polo Trackmy25" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual5V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneLongitudMm      4079 ;
+    :tieneCapacidadBaulL  300 ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenPoloTrackmy25_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Volkswagen · Volkswagen Saveiro Pa Ficha Tecnica ---
+:Motor_Volkswagen_VolkswagenSaveiroPaFichaTecnica_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenSaveiroPaFichaTecnica a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Saveiro Pa Ficha Tecnica" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Pickup ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tienePeso            1740.0 ;
+    :tieneLongitudMm      4493 ;
+    :tieneCapacidadBaulL  924 ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenSaveiroPaFichaTecnica_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Volkswagen · Volkswagen T Cross Pa Tsi My 25 M ---
+:Motor_Volkswagen_VolkswagenTCrossPaTsiMy25M_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenTCrossPaTsiMy25M a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen T Cross Pa Tsi My 25 M" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenTCrossPaTsiMy25M_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP .
+
+# --- Volkswagen · Volkswagen Taosmy24 Mex ---
+:Motor_Volkswagen_VolkswagenTaosmy24Mex_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenTaosmy24Mex a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Taosmy24 Mex" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenTaosmy24Mex_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistESP, :SistFrenEmergencia .
+
+# --- Volkswagen · Volkswagen Tera My ---
+:Motor_Volkswagen_VolkswagenTeraMy_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenTeraMy a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Tera My" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2025"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenTeraMy_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Volkswagen Teramont Ficha Tecnica ---
+:Volkswagen_VolkswagenTeramontFichaTecnica a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Teramont Ficha Tecnica" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Volkswagen Tiguan Elegance ---
+:Motor_Volkswagen_VolkswagenTiguanElegance_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenTiguanElegance a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Tiguan Elegance" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :SUV ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenTiguanElegance_Comb ;
+    :tieneSistemaSeguridad :SistABS .
+
+# --- Volkswagen · Volkswagen Virtus Pa Ficha Tecnica ---
+:Motor_Volkswagen_VolkswagenVirtusPaFichaTecnica_Comb a :MotorCombustion ;
+    :usaCombustible    :Gasolina .
+
+:Volkswagen_VolkswagenVirtusPaFichaTecnica a :VehiculoCombustion ;
+    :tieneNombreModelo    "Volkswagen Virtus Pa Ficha Tecnica" ;
+    :tieneMarca           "Volkswagen" ;
+    :fabricadoPor         :Volkswagen ;
+    :perteneceACategoria  :Sedan ;
+    :tieneTransmision     :Manual6V ;
+    :tieneAnyoLanzamiento "2024"^^xsd:gYear ;
+    :tieneMotorCombustion    :Motor_Volkswagen_VolkswagenVirtusPaFichaTecnica_Comb ;
+    :tieneSistemaSeguridad :SistABS, :SistControlCrucero .

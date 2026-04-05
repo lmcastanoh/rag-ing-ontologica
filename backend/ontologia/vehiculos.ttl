@@ -1,0 +1,237 @@
+@prefix :     <http://www.semanticweb.org/rag-ontologica/vehiculos#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc:   <http://purl.org/dc/elements/1.1/> .
+
+# ==============================================================================
+# DECLARACION DE LA ONTOLOGIA
+# ==============================================================================
+<http://www.semanticweb.org/rag-ontologica/vehiculos>
+    a owl:Ontology ;
+    dc:title "Ontología de Vehículos Automotores"@es ;
+    dc:description "Ontología para el sistema RAG de fichas técnicas de vehículos."@es ;
+    owl:versionInfo "1.0" .
+
+
+# ==============================================================================
+# CLASES (12 clases)
+# ==============================================================================
+
+:Vehiculo a owl:Class ;
+    rdfs:label "Vehículo"@es ;
+    rdfs:comment "Clase raíz que representa cualquier vehículo automotor."@es .
+
+# Jerarquía 1
+:VehiculoCombustion a owl:Class ;
+    rdfs:subClassOf :Vehiculo ;
+    rdfs:label "Vehículo de Combustión"@es .
+
+# Jerarquía 2
+:VehiculoElectrico a owl:Class ;
+    rdfs:subClassOf :Vehiculo ;
+    rdfs:label "Vehículo Eléctrico"@es .
+
+# Jerarquía 3
+:VehiculoHibrido a owl:Class ;
+    rdfs:subClassOf :Vehiculo ;
+    rdfs:label "Vehículo Híbrido"@es .
+
+:Fabricante a owl:Class ;
+    rdfs:label "Fabricante"@es .
+
+:Motor a owl:Class ;
+    rdfs:label "Motor"@es .
+
+# Jerarquía 4
+:MotorCombustion a owl:Class ;
+    rdfs:subClassOf :Motor ;
+    rdfs:label "Motor de Combustión Interna"@es .
+
+# Jerarquía 5
+:MotorElectrico a owl:Class ;
+    rdfs:subClassOf :Motor ;
+    rdfs:label "Motor Eléctrico"@es .
+
+:Transmision a owl:Class ;
+    rdfs:label "Transmisión"@es .
+
+:CategoriaVehiculo a owl:Class ;
+    rdfs:label "Categoría de Vehículo"@es .
+
+:TipoCombustible a owl:Class ;
+    rdfs:label "Tipo de Combustible"@es .
+
+:SistemaSeguridad a owl:Class ;
+    rdfs:label "Sistema de Seguridad"@es .
+
+
+# ==============================================================================
+# CLASES DISJUNTAS (2 casos)
+# ==============================================================================
+
+[] a owl:AllDisjointClasses ;
+    owl:members ( :MotorCombustion :MotorElectrico ) .
+
+[] a owl:AllDisjointClasses ;
+    owl:members ( :VehiculoCombustion :VehiculoElectrico ) .
+
+
+# ==============================================================================
+# CONSTRUCTOR LÓGICO: owl:intersectionOf
+# ==============================================================================
+:VehiculoHibrido owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+        :Vehiculo
+        [ a owl:Restriction ;
+          owl:onProperty :tieneMotor ;
+          owl:someValuesFrom :MotorCombustion ]
+        [ a owl:Restriction ;
+          owl:onProperty :tieneMotor ;
+          owl:someValuesFrom :MotorElectrico ]
+    )
+] .
+
+
+# ==============================================================================
+# PROPIEDADES DE OBJETO
+# ==============================================================================
+
+:fabricadoPor a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :Fabricante ;
+    rdfs:label  "fabricado por"@es .
+
+# inverseOf 1
+:fabricaVehiculo a owl:ObjectProperty ;
+    owl:inverseOf :fabricadoPor ;
+    rdfs:domain  :Fabricante ;
+    rdfs:range   :Vehiculo ;
+    rdfs:label   "fabrica vehículo"@es .
+
+:tieneMotor a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :Motor ;
+    rdfs:label  "tiene motor"@es .
+
+# inverseOf 2
+:estaInstalladoEn a owl:ObjectProperty ;
+    owl:inverseOf :tieneMotor ;
+    rdfs:domain   :Motor ;
+    rdfs:range    :Vehiculo ;
+    rdfs:label    "está instalado en"@es .
+
+# Jerarquía de propiedades 1
+:tieneMotorCombustion a owl:ObjectProperty ;
+    rdfs:subPropertyOf :tieneMotor ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :MotorCombustion ;
+    rdfs:label  "tiene motor de combustión"@es .
+
+# Jerarquía de propiedades 2
+:tieneMotorElectrico a owl:ObjectProperty ;
+    rdfs:subPropertyOf :tieneMotor ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :MotorElectrico ;
+    rdfs:label  "tiene motor eléctrico"@es .
+
+:tieneTransmision a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :Transmision ;
+    rdfs:label  "tiene transmisión"@es .
+
+:perteneceACategoria a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :CategoriaVehiculo ;
+    rdfs:label  "pertenece a categoría"@es .
+
+:usaCombustible a owl:ObjectProperty ;
+    rdfs:domain :MotorCombustion ;
+    rdfs:range  :TipoCombustible ;
+    rdfs:label  "usa combustible"@es .
+
+:tieneSistemaSeguridad a owl:ObjectProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  :SistemaSeguridad ;
+    rdfs:label  "tiene sistema de seguridad"@es .
+
+
+# ==============================================================================
+# PROPIEDADES DE DATOS (con rangos XML Schema)
+# ==============================================================================
+
+:tieneNombreModelo a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:string .
+
+:tieneMarca a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:string .
+
+:tieneAnyoLanzamiento a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:gYear .
+
+:tienePotenciaCV a owl:DatatypeProperty ;
+    rdfs:domain :Motor ;
+    rdfs:range  xsd:integer .
+
+:tienePeso a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneAutonomiaKm a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneCapacidadBateriaKwh a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneConsumoL100km a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+:tieneLongitudMm a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:integer .
+
+:tieneCapacidadBaulL a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:integer .
+
+:tieneCilindradaCc a owl:DatatypeProperty ;
+    rdfs:domain :MotorCombustion ;
+    rdfs:range  xsd:integer .
+
+:tienePrecioBase a owl:DatatypeProperty ;
+    rdfs:domain :Vehiculo ;
+    rdfs:range  xsd:decimal .
+
+
+# ==============================================================================
+# RESTRICCIONES DE PROPIEDAD
+# ==============================================================================
+
+# Restricción universal (owl:allValuesFrom)
+:VehiculoElectrico rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty    :tieneMotor ;
+    owl:allValuesFrom :MotorElectrico
+] .
+
+# Restricción existencial (owl:someValuesFrom)
+:Vehiculo rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty     :fabricadoPor ;
+    owl:someValuesFrom :Fabricante
+] .
+
+# Restricción de cardinalidad máxima (owl:maxCardinality)
+:Vehiculo rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty    :fabricadoPor ;
+    owl:maxCardinality "1"^^xsd:nonNegativeInteger
+] .
