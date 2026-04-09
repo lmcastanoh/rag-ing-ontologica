@@ -100,7 +100,7 @@ START
       END                                │
                                          ▼
                               ┌────────────────────┐
-                              │   react_agent       │  Loop ReAct (max 7 iteraciones)
+                              │   react_agent       │  Loop ReAct (max 5 iteraciones)
                               │                     │  Thought → Action → Observation
                               │  10 tools disponibles│  Decide tools dinamicamente
                               └─────────┬──────────┘
@@ -144,7 +144,7 @@ START
 
 | Patron | Implementacion |
 |--------|----------------|
-| **ReAct (Reasoning + Acting)** | El agente razona (Thought), elige tool (Action), observa resultado, decide si continuar. Max 7 iteraciones. |
+| **ReAct (Reasoning + Acting)** | El agente razona (Thought), elige tool (Action), observa resultado, decide si continuar. Max 5 iteraciones. |
 | **Reflecting** | El critico evalua la respuesta y da feedback. Si score < 0.5, reintenta con correccion (max 3 veces). |
 | **Query Transformer** | Detecta automaticamente si la consulta necesita HyDE (corta/ambigua) o Decomposition (multiples preguntas/condicionales). |
 | **Web Fallback con feedback** | Tras 3 fallos de reflexion, busca en DuckDuckGo, responde, **e ingiere los resultados a ChromaDB** para futuras consultas. |
@@ -162,6 +162,11 @@ START
 ## Transformaciones Automaticas de Consulta
 
 El nodo `query_transformer` analiza la consulta del usuario **antes** del agente ReAct y aplica transformaciones segun el tipo de pregunta.
+
+> **Optimizacion de latencia**: el `query_transformer` salta la llamada LLM
+> cuando el intent es `Resumen` o `Comparación`, ya que estos tienen tools
+> dedicadas (`resumir_ficha`, `comparar_modelos`) que ya manejan la complejidad.
+> Solo ejecuta deteccion de HyDE/Decomposition para intents tipo `Búsqueda`.
 
 ### Detecciones automaticas
 
@@ -538,8 +543,8 @@ cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd backend && python test_k
 
 1. **Usuario** ingresa la consulta en el frontend
 2. **classify_intent** clasifica en Busqueda/Resumen/Comparacion/GENERAL
-3. **query_transformer** detecta automaticamente si aplica HyDE o Decomposition
-4. **react_agent** decide tools dinamicamente (vectorial MMR, KG, HyDE, etc.) en loop max 7 iteraciones
+3. **query_transformer** detecta automaticamente si aplica HyDE o Decomposition (skip para Resumen/Comparacion)
+4. **react_agent** decide tools dinamicamente (vectorial MMR, KG, HyDE, etc.) en loop max 5 iteraciones
 5. **generate_grounded** genera respuesta preliminar con citas obligatorias
 6. **evaluate_grounding** evalua la respuesta (reflecting); si rechazada, reintenta con feedback (max 3)
 7. **evaluate_metrics** calcula Recall@k, Precision@k, MRR, nDCG@k (+ LLM-as-Judge en eval mode)
@@ -549,6 +554,25 @@ cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd backend && python test_k
    - **Ingiere los resultados a ChromaDB** (retroalimentacion del KB)
    - Pasa por evaluate_metrics
 9. Retorna respuesta + trazabilidad completa via SSE al frontend
+
+---
+
+## Configuracion del grafo
+
+Limites configurables en `backend/rag_graph.py`:
+
+| Constante | Valor | Descripcion |
+|-----------|-------|-------------|
+| `MAX_REACT_ITERATIONS` | `5` | Maximo de pasos Thought/Action/Observation del agente ReAct |
+| `MAX_RETRIES` | `3` | Maximo de reintentos del reflecting loop antes de escalar a web_fallback |
+
+### Optimizaciones de latencia aplicadas
+
+- **Skip query_transformer LLM call** para intents `Resumen` y `Comparación`
+- **LLM-as-Judge solo en `eval_mode=True`** (script batch), no en chat normal
+- **Scratchpad ReAct truncado** a 250 chars por observation para reducir tokens
+- **Singleton de embeddings** HuggingFace para evitar reload del modelo
+- **Routing condicional** correcto en `route_after_metrics` (`< MAX_RETRIES` estricto)
 
 ---
 

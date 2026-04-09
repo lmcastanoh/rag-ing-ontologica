@@ -80,7 +80,7 @@ from tools import (
 
 
 # ── Configuracion ──────────────────────────────────────────────────────────
-MAX_REACT_ITERATIONS = 7   # Maximo de pasos Thought/Action/Observation
+MAX_REACT_ITERATIONS = 5   # Maximo de pasos Thought/Action/Observation (era 7, reducido para latencia)
 MAX_RETRIES = 3            # Maximo de reintentos del reflecting loop
 
 
@@ -359,12 +359,33 @@ def build_rag_graph():
         """
         question = state["question"]
         intent = state.get("intent") or {}
+        intent_name = intent.get("intent", "")
 
         # Solo transformar si necesita retrieval (saltar GENERAL)
         if not intent.get("needs_retrieval", True):
             return {}
 
-        # Detectar transformaciones necesarias con LLM estructurado
+        # Optimizacion: saltar la llamada LLM cuando el intent es Resumen o Comparacion.
+        # Estos intents tienen tools dedicadas (resumir_ficha, comparar_modelos) que
+        # ya manejan la complejidad. HyDE/Decomposition son utiles principalmente para
+        # consultas tipo Busqueda donde el agente puede beneficiarse de hints.
+        if intent_name in ("Resumen", "Comparación"):
+            transformations = {
+                "needs_hyde": False,
+                "hyde_reason": f"skipped (intent={intent_name} usa tool dedicada)",
+                "needs_decomposition": False,
+                "sub_queries": [],
+                "decomposition_reason": f"skipped (intent={intent_name} usa tool dedicada)",
+            }
+            traza = dict(state.get("trazabilidad") or {})
+            traza["ruta"] = traza.get("ruta", []) + ["query_transformer"]
+            traza["query_transformations"] = transformations
+            return {
+                "query_transformations": transformations,
+                "trazabilidad": traza,
+            }
+
+        # Detectar transformaciones necesarias con LLM estructurado (solo Busqueda)
         try:
             structured = transformer_llm.with_structured_output(QueryTransformation)
             result: QueryTransformation = structured.invoke(
@@ -552,7 +573,7 @@ def build_rag_graph():
                 f"\nThought: {thought}\n"
                 f"Action: {action}\n"
                 f"Action Input: {json.dumps(action_input, ensure_ascii=False)}\n"
-                f"Observation: {observation_str[:400]}\n"
+                f"Observation: {observation_str[:250]}\n"
             )
 
         # Construir Documents desde las observaciones para generate_grounded.
@@ -909,7 +930,8 @@ def build_rag_graph():
 
         if not rejected:
             return END
-        if retry_count <= MAX_RETRIES and state.get("critic_feedback"):
+        # Solo reintentar si quedan reintentos disponibles (estricto: <)
+        if retry_count < MAX_RETRIES and state.get("critic_feedback"):
             return "generate_grounded"
         return "web_fallback"
 
