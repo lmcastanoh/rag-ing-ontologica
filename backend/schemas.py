@@ -106,3 +106,27 @@ class LLMJudgeMetrics(BaseModel):
     supported_claims: int = Field(ge=0)
     total_claims: int = Field(ge=0)
     unsupported_claims: list[str] = Field(default_factory=list)
+
+
+# ── Schema de transformaciones de query ─────────────────────────────────────
+
+class QueryTransformation(BaseModel):
+    """Resultado del analisis automatico de la consulta del usuario.
+
+    Detecta si la consulta necesita transformaciones dinamicas:
+    - HyDE: si es corta o ambigua, generar documento hipotetico para mejor retrieval
+    - Decomposition: si contiene multiples preguntas o condicionales, descomponer
+
+    Campos:
+        needs_hyde:           True si la consulta es corta/ambigua y se beneficia de HyDE
+        hyde_reason:          Razon corta de por que aplicar (o no) HyDE
+        needs_decomposition:  True si la consulta tiene multiples preguntas/condicionales
+        sub_queries:          Lista de sub-consultas extraidas (vacia si no aplica)
+        decomposition_reason: Razon corta de por que aplicar (o no) decomposition
+    """
+
+    needs_hyde: bool
+    hyde_reason: str = Field(min_length=1, max_length=240)
+    needs_decomposition: bool
+    sub_queries: list[str] = Field(default_factory=list)
+    decomposition_reason: str = Field(min_length=1, max_length=240)

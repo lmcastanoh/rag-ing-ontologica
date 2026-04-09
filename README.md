@@ -1,10 +1,16 @@
 # RAG Ontologica — Sistema RAG Agentico para Fichas Tecnicas Vehiculares
 
-Sistema RAG (Retrieval-Augmented Generation) agentico especializado en fichas tecnicas
-de vehiculos. Usa una arquitectura **ReAct + Reflecting** con LangGraph, donde un agente
-razona autonomamente sobre que herramientas usar (busqueda vectorial MMR, HyDE,
-descomposicion de preguntas, comparacion, etc.), evalua su propia respuesta, y reintenta
-con feedback hasta 3 veces antes de escalar a busqueda web.
+Sistema RAG (Retrieval-Augmented Generation) **agentico** especializado en fichas tecnicas
+de vehiculos. Combina:
+
+- **Arquitectura ReAct + Reflecting** con LangGraph
+- **Transformaciones automaticas de consulta** (HyDE, Query Decomposition)
+- **Busqueda hibrida**: vectorial MMR + Knowledge Graph (SPARQL/OWL)
+- **Auto-evaluacion** con LLM-as-Judge y metricas de retrieval
+- **Fallback web** con retroalimentacion de la base de conocimiento
+- **Tracing completo** con LangSmith
+
+---
 
 ## Stack Tecnologico
 
@@ -15,13 +21,14 @@ con feedback hasta 3 veces antes de escalar a busqueda web.
 | LLM | OpenAI `gpt-5-nano` |
 | Embeddings | HuggingFace `all-MiniLM-L6-v2` |
 | Base vectorial | ChromaDB (chunking fijo o semantico) |
-| Busqueda | MMR (Maximal Marginal Relevance) |
+| Knowledge Graph | GraphDB (SPARQL/OWL) |
+| Busqueda semantica | MMR (Maximal Marginal Relevance) |
 | Frontend | Streamlit |
-| OCR | EasyOCR (paginas escaneadas) |
+| OCR | EasyOCR |
 | Extraccion PDF | pdfplumber |
 | Web Search | DuckDuckGo (fallback) |
 | Tracing | LangSmith |
-| Evaluacion | Metricas custom + LLM-as-Judge |
+| Evaluacion | Recall@k, Precision@k, MRR, nDCG, LLM-as-Judge |
 
 ---
 
@@ -31,27 +38,29 @@ con feedback hasta 3 veces antes de escalar a busqueda web.
 rag-ing-ontologica/
 │
 ├── backend/
-│   ├── app.py                # API FastAPI: endpoints /ingest, /chat/stream
-│   ├── rag_graph.py          # Grafo LangGraph: ReAct + Reflecting
-│   ├── rag_store.py          # ChromaDB: chunking fijo y semantico
-│   ├── tools.py              # 9 tools del agente ReAct
-│   ├── prompts.py            # System prompts (clasificador, ReAct, critico, judges)
-│   ├── schemas.py            # Modelos Pydantic
-│   ├── evaluation.py         # Metricas: Recall@k, Precision@k, MRR, nDCG, LLM-as-Judge
-│   ├── eval_dataset.py       # Dataset de ground truth para evaluacion
-│   ├── run_evaluation.py     # Script CLI para evaluacion batch
-│   ├── kg_rag_agent.py       # Agente RAG sobre Knowledge Graph (ontologia)
-│   ├── kg_retriever.py       # Retriever para SPARQL queries
-│   ├── ontologia/            # Ontologia OWL/RDF de vehiculos
-│   ├── data/                 # PDFs organizados por marca
-│   ├── chroma_db/            # Vector store con chunking fijo
-│   └── chroma_db_semantic/   # Vector store con chunking semantico
+│   ├── app.py                  # API FastAPI: endpoints /ingest, /chat/stream
+│   ├── rag_graph.py            # Grafo LangGraph: ReAct + Reflecting + Transformaciones
+│   ├── rag_store.py            # ChromaDB: chunking fijo y semantico
+│   ├── tools.py                # 10 tools del agente ReAct (incluye KG)
+│   ├── prompts.py              # System prompts (clasificador, transformer, ReAct, critico, judges)
+│   ├── schemas.py              # Modelos Pydantic
+│   ├── evaluation.py           # Metricas: Recall@k, Precision@k, MRR, nDCG, LLM-as-Judge
+│   ├── eval_dataset.py         # Dataset de ground truth
+│   ├── run_evaluation.py       # Script CLI para evaluacion batch
+│   ├── kg_retriever.py         # Funciones SPARQL para consultar el Knowledge Graph
+│   ├── kg_rag_agent.py         # Agente RAG sobre el grafo de conocimiento
+│   ├── ontologia/              # Ontologia OWL/RDF de vehiculos
+│   │   └── vehiculos_completo.ttl
+│   ├── data/                   # PDFs organizados por marca
+│   ├── chroma_db/              # Vector store con chunking fijo
+│   ├── chroma_db_semantic/     # Vector store con chunking semantico
+│   └── test_kg.py              # Script de prueba de la integracion del KG
 │
 ├── frontend/
-│   └── streamlit_app.py      # Interfaz de chat con trazabilidad visual
+│   └── streamlit_app.py        # Interfaz de chat con trazabilidad enriquecida
 │
-├── .env                      # Variables de entorno
-├── requeriments.txt          # Dependencias Python
+├── .env                        # Variables de entorno
+├── requeriments.txt            # Dependencias Python
 └── README.md
 ```
 
@@ -62,11 +71,12 @@ rag-ing-ontologica/
 - **7 marcas**: Toyota, Mazda, Volkswagen, Peugeot, Opel, MG Emotor, Seat
 - **50 modelos** indexados
 - **584 chunks** (fijo) / **476 chunks** (semantico) en ChromaDB
+- Knowledge Graph en GraphDB con ontologia OWL (`vehiculos_completo.ttl`)
 - Metadata por chunk: `source`, `page`, `marca`, `modelo`, `doc_id`, `chunk_id`, `ocr`, `chunking`
 
 ---
 
-## Arquitectura: ReAct + Reflecting Agent
+## Arquitectura del Grafo
 
 ```
 START
@@ -76,76 +86,169 @@ START
 │  classify_intent    │  Clasifica en Busqueda|Resumen|Comparacion|GENERAL
 └──────────┬──────────┘
            │
-    ┌──────┴──────────────────────┐
-    │                             │
- GENERAL                    needs_retrieval
-    │                             │
-    ▼                             ▼
-┌──────────────┐       ┌───────────────────┐
-│ answer_general│       │   react_agent      │ ◄── Loop ReAct (max 7 iteraciones)
-└──────┬───────┘       │                    │     Thought → Action → Observation
-       │               │  9 tools disponibles│
-       ▼               └─────────┬──────────┘
-      END                        │
-                                 ▼
-                       ┌──────────────────┐
-                       │ generate_grounded │ ◄────┐
-                       └────────┬─────────┘      │
-                                │                │
-                                ▼                │ retry con feedback
-                       ┌──────────────────┐      │ (max 3 reintentos)
-                       │evaluate_grounding │      │
-                       └────────┬─────────┘      │
-                                │                │
-                                ▼                │
-                       ┌──────────────────┐      │
-                       │evaluate_metrics   │      │
-                       └────────┬─────────┘      │
-                                │                │
-                    ┌───────────┼────────────────┘
-                    │           │
-              aprobado     rechazado + 3 reintentos
-                    │           │
-                    ▼           ▼
-                   END   ┌──────────────┐
-                         │ web_fallback  │  Busqueda en internet
-                         └──────┬───────┘
-                                ▼
-                               END
+    ┌──────┴────────────────────────────┐
+    │                                   │
+ GENERAL                          needs_retrieval
+    │                                   │
+    ▼                                   ▼
+┌──────────────┐         ┌────────────────────────────┐
+│answer_general│         │   query_transformer         │  Detecta automaticamente
+└──────┬───────┘         │                             │  - HyDE (consulta corta/ambigua)
+       │                 │  Transformaciones dinamicas │  - Decomposition (multiples preguntas)
+       ▼                 └──────────────┬──────────────┘
+      END                                │
+                                         ▼
+                              ┌────────────────────┐
+                              │   react_agent       │  Loop ReAct (max 7 iteraciones)
+                              │                     │  Thought → Action → Observation
+                              │  10 tools disponibles│  Decide tools dinamicamente
+                              └─────────┬──────────┘
+                                        │
+                                        ▼
+                              ┌──────────────────┐
+                              │ generate_grounded │ ◄────┐
+                              └────────┬─────────┘      │
+                                       │                │
+                                       ▼                │ retry con feedback
+                              ┌──────────────────┐      │ (max 3 reintentos)
+                              │evaluate_grounding │      │
+                              │   (Reflecting)    │      │
+                              └────────┬─────────┘      │
+                                       │                │
+                                       ▼                │
+                              ┌──────────────────┐      │
+                              │ evaluate_metrics  │      │
+                              └────────┬─────────┘      │
+                                       │                │
+                           ┌───────────┼────────────────┘
+                           │           │
+                       APROBADO   RECHAZADO + 3 reintentos
+                           │           │
+                           ▼           ▼
+                          END   ┌──────────────┐
+                                │ web_fallback  │  Busqueda DuckDuckGo
+                                │ + ingesta KB  │  Retroalimenta ChromaDB
+                                └──────┬───────┘
+                                       │
+                                       ▼
+                              ┌──────────────────┐
+                              │ evaluate_metrics  │
+                              └────────┬─────────┘
+                                       │
+                                       ▼
+                                      END
 ```
 
 ### Patrones implementados
 
 | Patron | Implementacion |
 |--------|----------------|
-| **ReAct (Reasoning + Acting)** | El agente razona (Thought), elige tool (Action), observa resultado, decide si continuar. Loop de hasta 7 iteraciones. |
+| **ReAct (Reasoning + Acting)** | El agente razona (Thought), elige tool (Action), observa resultado, decide si continuar. Max 7 iteraciones. |
 | **Reflecting** | El critico evalua la respuesta y da feedback. Si score < 0.5, reintenta con correccion (max 3 veces). |
-| **Web Fallback** | Tras 3 fallos de reflexion, escala a busqueda web (DuckDuckGo). |
-| **Memory conversacional** | `last_model`/`last_make` persisten entre turnos via `MemorySaver` + reducer `_keep_latest`. |
+| **Query Transformer** | Detecta automaticamente si la consulta necesita HyDE (corta/ambigua) o Decomposition (multiples preguntas/condicionales). |
+| **Web Fallback con feedback** | Tras 3 fallos de reflexion, busca en DuckDuckGo, responde, **e ingiere los resultados a ChromaDB** para futuras consultas. |
+| **Memory conversacional** | `last_model`/`last_make` persisten entre turnos via `MemorySaver`. |
 
-### Tools del agente ReAct
+---
 
-| Tool | Funcion | Busqueda |
-|------|---------|----------|
-| `buscar_vectorial` | Busqueda semantica en ChromaDB con filtros de metadata | MMR (lambda=0.7) |
-| `buscar_hyde` | HyDE: genera doc hipotetico y busca similares | MMR (lambda=0.7) |
-| `buscar_especificacion` | Dato tecnico puntual de un modelo | MMR (lambda=0.7) |
-| `buscar_por_marca` | Todos los modelos de una marca | MMR (lambda=0.5) |
-| `comparar_modelos` | Tabla comparativa entre 2 modelos | MMR (lambda=0.5) |
-| `resumir_ficha` | Resumen estructurado de un modelo | MMR (lambda=0.5) |
-| `descomponer_pregunta` | Divide preguntas complejas en sub-preguntas | — |
-| `listar_modelos_disponibles` | Catalogo completo indexado | — |
-| `buscar_web` | DuckDuckGo (solo en web_fallback) | — |
+## Transformaciones Automaticas de Consulta
 
-> **MMR (Maximal Marginal Relevance)**: balance entre relevancia y diversidad.
-> `lambda=0.7` para busquedas puntuales, `lambda=0.5` para resumenes/comparaciones donde
-> se necesita cubrir distintas secciones de la ficha tecnica sin chunks redundantes.
+El nodo `query_transformer` analiza la consulta del usuario **antes** del agente ReAct y aplica transformaciones segun el tipo de pregunta.
+
+### Detecciones automaticas
+
+#### 1. HyDE (Hypothetical Document Embeddings)
+
+Activa HyDE cuando la consulta es **corta o ambigua**:
+- Menos de 6 palabras significativas
+- Usa pronombres sin contexto ("cuanto mide eso")
+- Una sola palabra clave ("potencia", "consumo")
+- No menciona modelo o marca especifica
+
+Cuando se activa, el agente prioriza `buscar_hyde` (genera doc hipotetico → busca chunks similares).
+
+#### 2. Query Decomposition
+
+Activa decomposition cuando la consulta tiene **multiples preguntas o condicionales**:
+- Multiples signos de interrogacion
+- Conjunciones tipo "y tambien", "ademas", "por otro lado"
+- Listado de aspectos
+- Condicionales tipo "si X, entonces Y"
+
+Cuando se activa, descompone la pregunta en 2-4 sub-consultas y le indica al agente que las resuelva por separado.
+
+---
+
+## Tools del Agente ReAct (10 tools)
+
+| Tool | Funcion | Tipo |
+|------|---------|------|
+| `buscar_vectorial` | Busqueda semantica con MMR y filtros de metadata | Vectorial |
+| `buscar_hyde` | HyDE: documento hipotetico para mejor retrieval | Vectorial |
+| `buscar_especificacion` | Dato tecnico puntual de un modelo | Vectorial |
+| `buscar_por_marca` | Todos los modelos de una marca | Vectorial |
+| `comparar_modelos` | Tabla comparativa entre 2 modelos | Vectorial + LLM |
+| `resumir_ficha` | Resumen estructurado de un modelo | Vectorial + LLM |
+| `descomponer_pregunta` | Divide preguntas complejas en sub-preguntas | LLM |
+| `listar_modelos_disponibles` | Catalogo completo indexado | ChromaDB |
+| `consultar_grafo_conocimiento` | **SPARQL sobre ontologia OWL** | **Knowledge Graph** |
+| `buscar_web` | DuckDuckGo (solo en web_fallback) | Web |
+
+### Knowledge Graph: `consultar_grafo_conocimiento`
+
+Acciones disponibles:
+- `especificaciones`: peso, longitud, baul, precio, anyo
+- `motor`: potencia, cilindrada, combustible, autonomia, bateria
+- `comparar`: dos modelos lado a lado
+- `por_marca`: lista todos los modelos de una marca
+- `electricos`: filtra electricos por autonomia minima
+- `seguridad`: sistemas de seguridad del modelo
+
+El agente usa el KG cuando necesita **datos estructurados precisos** (numericos exactos, relaciones formales) en lugar de chunks de texto.
+
+### Busqueda MMR
+
+Todas las tools vectoriales usan **Maximal Marginal Relevance** (`max_marginal_relevance_search`) en lugar de `similarity_search` para garantizar relevancia + diversidad.
+
+| Tool | k | fetch_k | lambda_mult | Justificacion |
+|------|---|---------|-------------|---------------|
+| `buscar_especificacion` | 6 | 20 | **0.7** | Dato puntual: prioriza relevancia |
+| `buscar_por_marca` | 10 | 30 | **0.5** | Catalogo: necesita diversidad de modelos |
+| `comparar_modelos` | 8/modelo | 25 | **0.5** | Comparacion: cubrir distintas secciones |
+| `resumir_ficha` | 10 | 30 | **0.5** | Resumen: maxima cobertura |
+| `buscar_vectorial` | variable | k×3 | **0.7** | Tool principal: balance general |
+| `buscar_hyde` | variable | k×3 | **0.7** | HyDE: doc hipotetico ya sesga |
+
+---
+
+## Reflecting + Web Fallback con Retroalimentacion
+
+### Reflecting Loop
+
+Despues de generar la respuesta, el `evaluate_grounding` evalua:
+1. **supported_by_context**: la respuesta esta soportada por el contexto?
+2. **has_citations**: incluye citas en formato `[doc_id=X; pagina=Y]`?
+3. **complete_enough**: es suficientemente completa?
+4. **score** (0.0-1.0)
+
+Si `score < 0.5` y quedan reintentos (max 3), inyecta el feedback como correccion en el siguiente `generate_grounded`.
+
+### Web Fallback con Retroalimentacion de KB
+
+Tras 3 reintentos fallidos, el flujo escala a `web_fallback`:
+
+1. **Busca en DuckDuckGo** con la pregunta original
+2. **Genera respuesta** usando los resultados web
+3. **Retroalimenta ChromaDB**: ingiere los resultados como nuevos chunks con metadata:
+   - `origen=web_fallback`
+   - `pregunta_origen=<pregunta del usuario>`
+   - `timestamp=<YYYYMMDD_HHMMSS>`
+
+**Ventaja**: la proxima vez que alguien pregunte algo similar, el RAG ya tiene esa informacion en la base vectorial — no necesita hacer fallback web de nuevo.
 
 ---
 
 ## Modulo de Evaluacion
-
-El sistema incluye un modulo completo de evaluacion con:
 
 ### Metricas de Retrieval (con ground truth)
 - **Recall@k**: fraccion de docs relevantes recuperados
@@ -158,9 +261,7 @@ El sistema incluye un modulo completo de evaluacion con:
 - **Faithfulness**: la respuesta es fiel al contexto (sin alucinacion)?
 
 ### Visualizacion en trazabilidad
-Las metricas de retrieval se calculan en cada query y se muestran en el expander de
-trazabilidad del frontend. Las metricas LLM-as-Judge solo se ejecutan en modo evaluacion
-batch (`eval_mode=True`) para no agregar latencia al chat.
+Las metricas de retrieval se calculan **en cada query** y se muestran en el expander de trazabilidad. Las metricas LLM-as-Judge solo se ejecutan en modo evaluacion batch (`eval_mode=True`) para no agregar latencia al chat.
 
 ### Script de evaluacion batch
 
@@ -169,16 +270,13 @@ cd backend
 python run_evaluation.py
 ```
 
-Ejecuta las 17 preguntas del dataset de ground truth, calcula todas las metricas, imprime
-tabla resumen y guarda resultados en `eval_results.json`.
+Ejecuta las 17 preguntas del dataset, calcula todas las metricas (incluyendo LLM-as-Judge) y guarda resultados en `eval_results.json`.
 
 ---
 
 ## Tracing con LangSmith
 
-El sistema esta integrado con [LangSmith](https://smith.langchain.com/) para tracing
-completo del grafo. Cada nodo tiene `RunnableLambda(...).with_config({run_name, tags, metadata})`,
-asi que LangSmith captura automaticamente el arbol de ejecucion completo.
+El sistema esta integrado con [LangSmith](https://smith.langchain.com/) para tracing completo del grafo. Cada nodo tiene `RunnableLambda(...).with_config({run_name, tags, metadata})`, asi que LangSmith captura automaticamente el arbol de ejecucion completo.
 
 ### Configurar LangSmith
 
@@ -200,14 +298,6 @@ LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 
 5. Hacer una pregunta y ver el run completo en https://smith.langchain.com/
 
-### Lo que vera en LangSmith
-
-Cada query genera un trace con el arbol completo:
-- `Intent Classifier` → `ReAct Agent` (con todas las iteraciones y tool calls)
-- `Grounded Generator` → `Grounding Critic (Reflecting)` → `Metrics Evaluator`
-- Si aplica: `Web Fallback`
-- Por cada nodo: tiempo de ejecucion, tokens consumidos, prompts enviados, outputs
-
 ---
 
 ## Configuracion en Windows
@@ -216,6 +306,7 @@ Cada query genera un trace con el arbol completo:
 
 - **Python 3.12** — https://www.python.org/downloads/
 - **Git** — https://git-scm.com/
+- **GraphDB Free** — https://www.ontotext.com/products/graphdb/download/ (para el Knowledge Graph)
 - Cuenta de OpenAI con API key activa
 - (Opcional) Cuenta de LangSmith para tracing
 
@@ -249,18 +340,34 @@ OPENAI_API_KEY=sk-tu-clave-aqui
 HF_TOKEN=hf-tu-token-aqui
 
 # Vector store: "fixed" (1000 chars) o "semantic" (SemanticChunker)
-CHROMA_STORE=fixed
+CHROMA_STORE=semantic
 
-# LangSmith Tracing (opcional pero recomendado)
+# LangSmith Tracing (opcional)
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_API_KEY=lsv2_pt_tu_key_aqui
 LANGCHAIN_PROJECT=rag-ontologica
 LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 ```
 
-### 5. Agregar documentos PDF
+### 5. Configurar GraphDB para el Knowledge Graph
 
-Colocar PDFs dentro de `backend/data/` organizados por marca:
+1. Instalar GraphDB Free Desktop
+2. Iniciar GraphDB (queda en http://localhost:7200)
+3. Crear repositorio:
+   - **Setup → Repositories → Create new repository → GraphDB Repository**
+   - **Repository ID**: `vehiculos`
+   - **Ruleset**: `OWL2-RL (Optimized)` (para inferencias)
+4. Cargar la ontologia:
+   - **Import → User data → Upload RDF files**
+   - Seleccionar `backend/ontologia/vehiculos_completo.ttl`
+5. Verificar con el script de prueba:
+
+```powershell
+cd backend
+python test_kg.py
+```
+
+### 6. Agregar documentos PDF
 
 ```
 backend/data/
@@ -272,7 +379,7 @@ backend/data/
 └── ...
 ```
 
-### 6. Ejecutar el backend (Terminal 1)
+### 7. Ejecutar el backend (Terminal 1)
 
 ```powershell
 cd rag-ing-ontologica
@@ -281,21 +388,19 @@ cd backend
 uvicorn app:app --reload --port 8001
 ```
 
-Verificar en: http://localhost:8001/docs
-
-### 7. Ingestar documentos
+### 8. Ingestar documentos
 
 Desde el frontend (boton "Ingestar") o con curl:
 
 ```powershell
+# Chunking semantico (recomendado)
+curl -X POST http://localhost:8001/ingest/semantic -H "Content-Type: application/json" -d "{\"data_dir\": \"./data\"}"
+
 # Chunking fijo (1000 chars)
 curl -X POST http://localhost:8001/ingest -H "Content-Type: application/json" -d "{\"data_dir\": \"./data\"}"
-
-# Chunking semantico (SemanticChunker)
-curl -X POST http://localhost:8001/ingest/semantic -H "Content-Type: application/json" -d "{\"data_dir\": \"./data\"}"
 ```
 
-### 8. Ejecutar el frontend (Terminal 2)
+### 9. Ejecutar el frontend (Terminal 2)
 
 ```powershell
 cd rag-ing-ontologica
@@ -306,7 +411,7 @@ streamlit run streamlit_app.py
 
 Acceder en: http://localhost:8501
 
-### 9. (Opcional) Ejecutar evaluacion batch
+### 10. (Opcional) Ejecutar evaluacion batch
 
 ```powershell
 cd backend
@@ -346,7 +451,7 @@ python run_evaluation.py
 
 Eventos SSE:
 - `token` — respuesta final del RAG
-- `trazabilidad` — JSON con la ruta completa del grafo, pasos ReAct, metricas, etc.
+- `trazabilidad` — JSON con la ruta completa del grafo, transformaciones, pasos ReAct, metricas, etc.
 - `done` — fin del stream
 
 ---
@@ -355,13 +460,15 @@ Eventos SSE:
 
 El expander "Trazabilidad de la respuesta" muestra:
 
-- **Ruta del grafo**: nodos visitados (ej: `classify_intent → react_agent → generate_grounded → evaluate_grounding → evaluate_metrics`)
+- **Ruta del grafo**: nodos visitados (ej: `classify_intent → query_transformer → react_agent → generate_grounded → evaluate_grounding → evaluate_metrics`)
 - **Clasificacion**: intent detectado y entidades extraidas
+- **Transformaciones de consulta**: HyDE y/o Decomposition aplicadas con justificacion
 - **Pasos ReAct**: cada thought, action y action input del agente
-- **Chunks recuperados**: doc_id, pagina y chunk_id de cada chunk usado
+- **Chunks recuperados**: doc_id, pagina y chunk_id
 - **Verificacion**: score del critico, issues, reintentos
 - **Metricas**: Recall@k, Precision@k, MRR, nDCG@k (siempre), Relevance + Faithfulness (en eval mode)
-- **Fallback web**: indicador si se uso busqueda en internet
+- **Web fallback**: indicador si se uso busqueda en internet
+- **Retroalimentacion KB**: chunks web ingeridos a ChromaDB
 
 ---
 
@@ -369,9 +476,16 @@ El expander "Trazabilidad de la respuesta" muestra:
 
 ### Error 401 de LangSmith
 
-Si ves `LangSmithAuthError: 401 Unauthorized` al enviar trazas:
+Si ves `LangSmithAuthError: 401 Unauthorized`:
 1. Verifica que `LANGCHAIN_API_KEY` este correctamente seteada en `.env`
-2. **Reinicia el backend** completamente (mata uvicorn y vuelvelo a arrancar) — el proceso debe leer las nuevas variables al iniciar
+2. **Reinicia el backend** completamente para que cargue las nuevas variables
+
+### GraphDB no responde
+
+Si la tool `consultar_grafo_conocimiento` retorna error de conexion:
+1. Verifica que GraphDB Desktop este corriendo (http://localhost:7200)
+2. Verifica que el repositorio `vehiculos` exista y tenga la ontologia cargada
+3. Ejecuta `python backend/test_kg.py` para diagnosticar
 
 ### Puerto en uso
 
@@ -386,7 +500,7 @@ Verificar creditos en: https://platform.openai.com/account/billing
 
 ### EasyOCR lento en primera ejecucion
 
-Es normal: descarga modelos de ~100 MB la primera vez. Las ejecuciones siguientes usan cache.
+Es normal: descarga modelos de ~100 MB la primera vez.
 
 ### Ingesta semantica falla con "client closed"
 
@@ -405,7 +519,28 @@ cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd frontend && streamlit ru
 
 # Evaluacion batch
 cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd backend && python run_evaluation.py
+
+# Test del Knowledge Graph
+cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd backend && python test_kg.py
 ```
+
+---
+
+## Flujo end-to-end de una consulta
+
+1. **Usuario** ingresa la consulta en el frontend
+2. **classify_intent** clasifica en Busqueda/Resumen/Comparacion/GENERAL
+3. **query_transformer** detecta automaticamente si aplica HyDE o Decomposition
+4. **react_agent** decide tools dinamicamente (vectorial MMR, KG, HyDE, etc.) en loop max 7 iteraciones
+5. **generate_grounded** genera respuesta preliminar con citas obligatorias
+6. **evaluate_grounding** evalua la respuesta (reflecting); si rechazada, reintenta con feedback (max 3)
+7. **evaluate_metrics** calcula Recall@k, Precision@k, MRR, nDCG@k (+ LLM-as-Judge en eval mode)
+8. **Si rechazada tras 3 intentos** → `web_fallback`:
+   - Busca en DuckDuckGo
+   - Genera respuesta desde resultados web
+   - **Ingiere los resultados a ChromaDB** (retroalimentacion del KB)
+   - Pasa por evaluate_metrics
+9. Retorna respuesta + trazabilidad completa via SSE al frontend
 
 ---
 

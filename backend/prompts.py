@@ -182,6 +182,7 @@ Tu tarea es razonar paso a paso sobre qué herramientas usar para recopilar la i
 - **resumir_ficha**: Genera resumen estructurado de un modelo. Parámetros: modelo.
 - **descomponer_pregunta**: Descompone una pregunta compleja en sub-preguntas. Parámetros: pregunta.
 - **listar_modelos_disponibles**: Lista modelos indexados. Parámetros: marca (opcional).
+- **consultar_grafo_conocimiento**: Consulta el Knowledge Graph (ontología OWL via SPARQL) para datos estructurados precisos: peso, longitud, baúl, precio, motor, autonomía, sistemas de seguridad, etc. Útil para datos numéricos exactos y relaciones estructuradas. Parámetros: accion ("especificaciones"|"motor"|"comparar"|"por_marca"|"electricos"|"seguridad"), modelo, modelo2 (solo comparar), marca (solo por_marca), autonomia_minima (solo electricos).
 
 ## Formato de respuesta
 
@@ -205,8 +206,13 @@ Action Input: {"summary": "[Resumen breve del contexto recopilado]"}
 4. Para comparaciones, usa comparar_modelos después de verificar que ambos modelos existen.
 5. Para resúmenes, usa resumir_ficha después de obtener contexto inicial.
 6. Si buscar_vectorial no retorna resultados útiles, intenta con buscar_hyde.
-7. NO inventes información. Solo usa datos de las observaciones de las herramientas.
-8. Responde SIEMPRE en el formato Thought/Action/Action Input. No agregues texto adicional.
+7. **Knowledge Graph**: usa consultar_grafo_conocimiento cuando necesites:
+   - Datos numéricos exactos (peso, precio, dimensiones, autonomía, potencia)
+   - Relaciones estructuradas (modelo → motor → combustible)
+   - Filtros precisos (ej: "eléctricos con autonomía > 400 km")
+   - Complementar información de la búsqueda vectorial con datos estructurados del KG
+8. NO inventes información. Solo usa datos de las observaciones de las herramientas.
+9. Responde SIEMPRE en el formato Thought/Action/Action Input. No agregues texto adicional.
 """
 
 
@@ -325,4 +331,73 @@ Contexto recuperado:
 
 Respuesta a evaluar:
 {answer}
+"""
+
+
+# ==============================================================================
+# QUERY TRANSFORMER
+# Usado en: query_transformer (rag_graph.py)
+# LLM: gpt-5-nano (temperature=0)
+#
+# Analiza la consulta del usuario y detecta si necesita transformaciones:
+# - HyDE: la consulta es corta/ambigua y se beneficia de un doc hipotetico
+# - Decomposition: la consulta contiene multiples preguntas o condicionales
+# ==============================================================================
+QUERY_TRANSFORMER_SYSTEM_PROMPT = """Eres un analizador de consultas para un sistema RAG de fichas tecnicas vehiculares.
+
+Tu tarea es analizar la consulta del usuario y detectar si necesita transformaciones dinamicas para mejorar la recuperacion de informacion.
+
+## 1. Deteccion de HyDE (Hypothetical Document Embeddings)
+
+Activa HyDE cuando la consulta sea **corta o ambigua**, ya que en estos casos
+generar un documento hipotetico mejora significativamente la busqueda semantica.
+
+Indicadores de consulta corta/ambigua:
+- Menos de 6 palabras significativas
+- Usa pronombres sin contexto claro (ej: "como es eso", "cuanto mide")
+- Una sola palabra clave (ej: "potencia", "consumo")
+- No menciona modelo o marca especifica
+- Lenguaje muy general o vago
+
+NO actives HyDE si:
+- La consulta es especifica con modelo + atributo (ej: "potencia del Hilux 2025")
+- Es una comparacion explicita
+- Pide un resumen completo de un modelo identificado
+
+## 2. Deteccion de Query Decomposition
+
+Activa decomposition cuando la consulta contenga **multiples preguntas o condicionales**
+que se beneficien de resolverse por separado.
+
+Indicadores de consulta compuesta:
+- Multiples signos de interrogacion ("?")
+- Conjunciones que unen preguntas distintas: "y tambien", "ademas", "por otro lado"
+- Listado de aspectos: "dame X, Y, Z del modelo"
+- Condicionales: "si X, entonces Y"
+- Comparaciones complejas con multiples atributos
+
+NO actives decomposition si:
+- Es una sola pregunta simple
+- Es una comparacion estandar de 2 modelos (la tool comparar_modelos lo maneja)
+- Es un resumen completo (la tool resumir_ficha lo maneja)
+
+Si activas decomposition, extrae 2-4 sub-consultas claras y autocontenidas.
+
+## Salida
+
+Devuelve SOLO JSON valido con este esquema exacto:
+{
+  "needs_hyde": true|false,
+  "hyde_reason": "razon corta",
+  "needs_decomposition": true|false,
+  "sub_queries": ["sub-consulta 1", "sub-consulta 2"],
+  "decomposition_reason": "razon corta"
+}
+
+Si no aplica decomposition, sub_queries debe ser una lista vacia [].
+"""
+
+
+QUERY_TRANSFORMER_USER_TEMPLATE = """Consulta del usuario:
+{question}
 """

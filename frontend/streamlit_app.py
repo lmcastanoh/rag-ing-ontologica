@@ -197,6 +197,31 @@ if prompt:
                     if cls.get("clarification_question"):
                         st.markdown(f"**Pregunta de aclaración:** {cls.get('clarification_question')}")
 
+                transformations = trazabilidad_data.get("query_transformations") or {}
+                if transformations:
+                    needs_hyde = transformations.get("needs_hyde", False)
+                    needs_decomp = transformations.get("needs_decomposition", False)
+                    if needs_hyde or needs_decomp:
+                        st.markdown("**Transformaciones de consulta:**")
+                        if needs_hyde:
+                            st.markdown(
+                                f"- 🔁 **HyDE activado** — {transformations.get('hyde_reason', '')}"
+                            )
+                        if needs_decomp:
+                            sub_qs = transformations.get("sub_queries", [])
+                            st.markdown(
+                                f"- 🧩 **Decomposition activada** — {transformations.get('decomposition_reason', '')}"
+                            )
+                            if sub_qs:
+                                st.markdown("  Sub-consultas:")
+                                for sq in sub_qs:
+                                    st.markdown(f"    - {sq}")
+                    else:
+                        st.markdown(
+                            f"**Transformaciones de consulta:** ninguna requerida "
+                            f"_(consulta clara y simple)_"
+                        )
+
                 react_steps = trazabilidad_data.get("react_steps", [])
                 if react_steps:
                     react_iters = trazabilidad_data.get("react_iterations", len(react_steps))
@@ -277,5 +302,13 @@ if prompt:
 
                 if trazabilidad_data.get("web_search_used"):
                     st.markdown("**Fuente alternativa:** Se usó búsqueda web (base de conocimiento insuficiente tras 3 reintentos)")
+                    kb_feedback = trazabilidad_data.get("kb_feedback") or {}
+                    if kb_feedback.get("status") == "ingerido":
+                        st.markdown(
+                            f"**Retroalimentación KB:** ✅ {kb_feedback.get('chunks_ingeridos', 0)} chunks "
+                            f"web ingeridos a ChromaDB para futuras consultas"
+                        )
+                    elif kb_feedback.get("status", "").startswith("error"):
+                        st.markdown(f"**Retroalimentación KB:** ⚠️ {kb_feedback.get('status')}")
 
     st.session_state.messages.append({"role": "assistant", "content": final_text})

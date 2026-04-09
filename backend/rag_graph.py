@@ -4,14 +4,18 @@
 #
 # Arquitectura: ReAct Agent + Reflecting
 #
-# Flujo: classify_intent -> [react_agent] -> generate_grounded ->
+# Flujo: classify_intent -> query_transformer -> react_agent -> generate_grounded ->
 #        evaluate_grounding -> evaluate_metrics -> [retry | web_fallback | END]
 #
 # 4 rutas posibles:
 #   A) GENERAL:      classify -> answer_general -> END (sin retrieval)
-#   B) RAG + ReAct:  classify -> react_agent -> generate -> evaluate -> metrics -> END
+#   B) RAG + ReAct:  classify -> query_transformer -> react_agent -> generate -> evaluate -> metrics -> END
 #   C) Retry:        ... -> evaluate (rechazada) -> metrics -> generate (con feedback)
 #   D) Web Fallback: ... -> evaluate (3 fallos) -> metrics -> web_fallback -> END
+#
+# Query Transformer (transformaciones dinamicas):
+#   - HyDE: detecta consultas cortas/ambiguas y le indica al ReAct usar buscar_hyde
+#   - Decomposition: detecta consultas con multiples preguntas y las descompone
 #
 # Features:
 #   - ReAct agent: razona sobre que tools usar (buscar_vectorial, hyde,
@@ -43,6 +47,8 @@ from prompts import (
     GROUNDED_GENERATION_USER_TEMPLATE,
     GROUNDING_CRITIC_SYSTEM_PROMPT,
     GROUNDING_CRITIC_USER_TEMPLATE,
+    QUERY_TRANSFORMER_SYSTEM_PROMPT,
+    QUERY_TRANSFORMER_USER_TEMPLATE,
     REACT_AGENT_SYSTEM_PROMPT,
     REACT_AGENT_USER_TEMPLATE,
     WEB_FALLBACK_SYSTEM_PROMPT,
@@ -50,7 +56,13 @@ from prompts import (
 )
 from eval_dataset import EVAL_DATASET
 from evaluation import compute_retrieval_metrics, compute_llm_judge_metrics
-from schemas import GroundingEvaluation, IntentClassification, eval_to_dict, intent_to_dict
+from schemas import (
+    GroundingEvaluation,
+    IntentClassification,
+    QueryTransformation,
+    eval_to_dict,
+    intent_to_dict,
+)
 from tools import (
     buscar_especificacion,
     buscar_hyde,
@@ -58,6 +70,7 @@ from tools import (
     buscar_vectorial,
     buscar_web,
     comparar_modelos,
+    consultar_grafo_conocimiento,
     descomponer_pregunta,
     listar_modelos_disponibles,
     resumir_ficha,
@@ -116,6 +129,7 @@ class RAGState(TypedDict):
     react_iteration: int
     web_search_used: bool
     eval_mode: bool
+    query_transformations: Optional[dict[str, Any]]
 
 
 # ── Funciones auxiliares ─────────────────────────────────────────────────────
@@ -247,10 +261,12 @@ def build_rag_graph():
         "resumir_ficha": resumir_ficha,
         "descomponer_pregunta": descomponer_pregunta,
         "listar_modelos_disponibles": listar_modelos_disponibles,
+        "consultar_grafo_conocimiento": consultar_grafo_conocimiento,
     }
 
     # LLMs especializados (todos gpt-5-nano con diferentes temperatures)
     router_llm = ChatOpenAI(model="gpt-5-nano", temperature=0)      # Clasificador
+    transformer_llm = ChatOpenAI(model="gpt-5-nano", temperature=0)  # Query transformer
     react_llm = ChatOpenAI(model="gpt-5-nano", temperature=0)        # Agente ReAct
     answer_llm = ChatOpenAI(model="gpt-5-nano", temperature=0.2)     # Generador
     critic_llm = ChatOpenAI(model="gpt-5-nano", temperature=0)       # Critico
@@ -326,6 +342,59 @@ def build_rag_graph():
         updates["trazabilidad"] = traza
         return updates
 
+    # ── Nodo 1.5: query_transformer ──────────────────────────────────────
+    def query_transformer(state: RAGState) -> dict[str, Any]:
+        """Analiza la consulta y aplica transformaciones dinamicas (HyDE, decomposition).
+
+        Solo se ejecuta si needs_retrieval=True (no para preguntas GENERAL).
+
+        Detecta automaticamente:
+        1. **HyDE necesario**: si la consulta es corta/ambigua, marca el flag para
+           que el agente ReAct priorice buscar_hyde sobre buscar_vectorial.
+        2. **Decomposition necesaria**: si la consulta tiene multiples preguntas
+           o condicionales, llama a descomponer_pregunta y guarda las sub-consultas.
+
+        Las transformaciones se inyectan como hints en el prompt del react_agent
+        para que las use desde la primera iteracion.
+        """
+        question = state["question"]
+        intent = state.get("intent") or {}
+
+        # Solo transformar si necesita retrieval (saltar GENERAL)
+        if not intent.get("needs_retrieval", True):
+            return {}
+
+        # Detectar transformaciones necesarias con LLM estructurado
+        try:
+            structured = transformer_llm.with_structured_output(QueryTransformation)
+            result: QueryTransformation = structured.invoke(
+                [
+                    SystemMessage(content=QUERY_TRANSFORMER_SYSTEM_PROMPT),
+                    HumanMessage(content=QUERY_TRANSFORMER_USER_TEMPLATE.format(
+                        question=question,
+                    )),
+                ]
+            )
+            transformations = result.model_dump()
+        except Exception as e:
+            # Si falla el analisis, no aplicar transformaciones (degradacion segura)
+            transformations = {
+                "needs_hyde": False,
+                "hyde_reason": f"error en analisis: {e}",
+                "needs_decomposition": False,
+                "sub_queries": [],
+                "decomposition_reason": "skipped por error",
+            }
+
+        traza = dict(state.get("trazabilidad") or {})
+        traza["ruta"] = traza.get("ruta", []) + ["query_transformer"]
+        traza["query_transformations"] = transformations
+
+        return {
+            "query_transformations": transformations,
+            "trazabilidad": traza,
+        }
+
     # ── Nodo 2a: answer_general ──────────────────────────────────────────
     def answer_general(state: RAGState) -> dict[str, Any]:
         """Responde preguntas generales sin retrieval documental."""
@@ -396,6 +465,25 @@ def build_rag_graph():
         if entities.get("model") or entities.get("make"):
             entity_hint = f"\nEntidades detectadas: modelo={entities.get('model')}, marca={entities.get('make')}"
             memory_context += entity_hint
+
+        # Hints de transformaciones dinamicas detectadas por query_transformer
+        transformations = state.get("query_transformations") or {}
+        if transformations.get("needs_hyde"):
+            memory_context += (
+                f"\n\n[TRANSFORMACION SUGERIDA] La consulta es corta/ambigua "
+                f"({transformations.get('hyde_reason', '')}). "
+                f"PRIORIZA usar buscar_hyde como primera tool en lugar de buscar_vectorial."
+            )
+        if transformations.get("needs_decomposition"):
+            sub_qs = transformations.get("sub_queries", [])
+            if sub_qs:
+                sub_qs_text = "\n".join(f"  - {sq}" for sq in sub_qs)
+                memory_context += (
+                    f"\n\n[TRANSFORMACION APLICADA] La consulta fue descompuesta en sub-preguntas "
+                    f"({transformations.get('decomposition_reason', '')}):\n"
+                    f"{sub_qs_text}\n"
+                    f"Resuelve cada sub-pregunta haciendo busquedas independientes y combina los resultados."
+                )
 
         react_steps: list[dict[str, Any]] = []
         all_observations: list[str] = []
@@ -655,8 +743,14 @@ def build_rag_graph():
         Proceso:
         1. Llama a buscar_web con la pregunta del usuario
         2. Genera respuesta final usando los resultados web
-        3. Marca web_search_used=True en trazabilidad
+        3. **Retroalimenta la base de conocimiento**: ingiere los resultados
+           web como nuevos chunks en ChromaDB para que futuras consultas similares
+           puedan responderse sin necesidad de fallback web.
+        4. Marca web_search_used=True en trazabilidad
         """
+        from datetime import datetime
+        from rag_store import get_active_vector_store
+
         question = state["question"]
 
         # Buscar en internet
@@ -675,10 +769,48 @@ def build_rag_graph():
         )
         answer = response.content if isinstance(response.content, str) else str(response.content)
 
+        # ── Retroalimentacion: ingerir resultados web a ChromaDB ────────
+        feedback_status = "no_ingerido"
+        feedback_chunks = 0
+        try:
+            if web_results_str and "Error" not in web_results_str[:20]:
+                vs = get_active_vector_store()
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                doc_id = f"web_fallback_{timestamp}"
+                # Dividir resultados web por separador "---" (formato de buscar_web)
+                web_blocks = [b.strip() for b in web_results_str.split("\n\n---\n\n") if b.strip()]
+                docs_to_add: list[Document] = []
+                for i, block in enumerate(web_blocks):
+                    docs_to_add.append(Document(
+                        page_content=f"Pregunta original: {question}\n\n{block}",
+                        metadata={
+                            "source": f"web_fallback_{timestamp}",
+                            "doc_id": doc_id,
+                            "chunk_id": f"{doc_id}_w{i}",
+                            "page": 1,
+                            "marca": "Web",
+                            "modelo": "web_search_result",
+                            "ocr": False,
+                            "origen": "web_fallback",
+                            "pregunta_origen": question,
+                            "timestamp": timestamp,
+                        },
+                    ))
+                if docs_to_add:
+                    vs.add_documents(documents=docs_to_add)
+                    feedback_chunks = len(docs_to_add)
+                    feedback_status = "ingerido"
+        except Exception as e:
+            feedback_status = f"error: {e}"
+
         traza = dict(state.get("trazabilidad") or {})
         traza["ruta"] = traza.get("ruta", []) + ["web_fallback"]
         traza["web_search_used"] = True
         traza["web_results_snippet"] = web_results_str[:500]
+        traza["kb_feedback"] = {
+            "status": feedback_status,
+            "chunks_ingeridos": feedback_chunks,
+        }
 
         return {
             "answer": answer,
@@ -763,7 +895,14 @@ def build_rag_graph():
     # ── Funciones de routing (conditional edges) ─────────────────────────
 
     def route_after_metrics(state: RAGState) -> str:
-        """Decide si reintentar, usar web fallback, o terminar despues de metricas."""
+        """Decide si reintentar, usar web fallback, o terminar despues de metricas.
+
+        Si la respuesta vino del web_fallback, terminar (no hay mas reintentos posibles).
+        """
+        # Si ya pasamos por web_fallback, terminar definitivamente
+        if state.get("web_search_used"):
+            return END
+
         eval_data = state.get("eval_result") or {}
         retry_count = state.get("retry_count", 0)
         rejected = not eval_data.get("approved", True) and eval_data.get("score", 1.0) < 0.5
@@ -775,10 +914,10 @@ def build_rag_graph():
         return "web_fallback"
 
     def route_after_classify(state: RAGState) -> str:
-        """Decide ruta: retrieval via ReAct o respuesta general directa."""
+        """Decide ruta: query_transformer (RAG) o answer_general directo."""
         intent = state.get("intent") or {}
         if intent.get("needs_retrieval", True):
-            return "react_agent"
+            return "query_transformer"
         return "answer_general"
 
     # ── Ensamblaje del grafo ─────────────────────────────────────────────
@@ -803,7 +942,16 @@ def build_rag_graph():
                 "metadata": {"node": "answer_general"}
             })
         )
-        
+
+        .add_node(
+            "query_transformer",
+            RunnableLambda(query_transformer).with_config({
+                "run_name": "Query Transformer (HyDE + Decomposition)",
+                "tags": ["rag", "query", "transformation"],
+                "metadata": {"node": "query_transformer"}
+            })
+        )
+
         .add_node(
             "react_agent",
             RunnableLambda(react_agent).with_config({
@@ -854,9 +1002,10 @@ def build_rag_graph():
         .add_conditional_edges(
             "classify_intent",
             route_after_classify,
-            {"react_agent": "react_agent", "answer_general": "answer_general"},
+            {"query_transformer": "query_transformer", "answer_general": "answer_general"},
         )
         .add_edge("answer_general", END)
+        .add_edge("query_transformer", "react_agent")
         .add_edge("react_agent", "generate_grounded")
         .add_edge("generate_grounded", "evaluate_grounding")
         .add_edge("evaluate_grounding", "evaluate_metrics")
@@ -865,7 +1014,7 @@ def build_rag_graph():
             route_after_metrics,
             {"generate_grounded": "generate_grounded", "web_fallback": "web_fallback", END: END},
         )
-        .add_edge("web_fallback", END)
+        .add_edge("web_fallback", "evaluate_metrics")
         .compile(checkpointer=MemorySaver())
     )
     print(graph.get_graph().draw_ascii())

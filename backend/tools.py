@@ -458,3 +458,102 @@ def buscar_web(query: str) -> str:
         return "Error: paquete duckduckgo-search no instalado. Ejecutar: pip install duckduckgo-search"
     except Exception as e:
         return f"Error en busqueda web: {e}"
+
+
+@tool
+def consultar_grafo_conocimiento(
+    accion: str,
+    modelo: str = "",
+    modelo2: str = "",
+    marca: str = "",
+    autonomia_minima: float = 300.0,
+) -> str:
+    """Consulta el Knowledge Graph (ontologia OWL) via SPARQL para extraer
+    relaciones estructuradas y datos enriquecidos sobre vehiculos.
+
+    Esta tool complementa la busqueda vectorial: mientras los embeddings encuentran
+    contenido similar en lenguaje natural, el KG proporciona datos estructurados
+    precisos y relaciones semanticas entre entidades (modelo-marca-motor-categoria-etc).
+
+    Acciones disponibles:
+    - "especificaciones" : datos generales del modelo (peso, longitud, baul, precio, anyo)
+    - "motor"            : datos del motor (potencia, cilindrada, combustible, autonomia, bateria)
+    - "comparar"         : compara dos modelos lado a lado (requiere modelo y modelo2)
+    - "por_marca"        : lista todos los modelos de una marca
+    - "electricos"       : vehiculos electricos con autonomia >= autonomia_minima
+    - "seguridad"        : sistemas de seguridad de un modelo
+
+    Usar cuando se necesiten:
+    - Datos numericos exactos (peso, precio, dimensiones)
+    - Relaciones estructuradas (modelo -> motor -> combustible)
+    - Filtros tipo "electricos con autonomia > 400 km"
+    - Comparaciones precisas con valores
+
+    Args:
+        accion:           Una de las acciones listadas arriba.
+        modelo:           Nombre del modelo (ej: "Hilux", "ZS EV"). Requerido para
+                          especificaciones, motor, comparar, seguridad.
+        modelo2:          Segundo modelo (solo para accion="comparar").
+        marca:            Nombre de la marca (solo para accion="por_marca").
+        autonomia_minima: Umbral de autonomia en km (solo para accion="electricos").
+
+    Returns:
+        Datos estructurados del KG formateados como texto, o mensaje de error.
+    """
+    try:
+        from kg_retriever import (
+            kg_buscar_especificaciones,
+            kg_buscar_motor,
+            kg_comparar_modelos,
+            kg_listar_modelos_por_marca,
+            kg_electricos_por_autonomia,
+            kg_sistemas_seguridad,
+            kg_format_para_llm,
+        )
+    except ImportError as e:
+        return f"Error importando kg_retriever: {e}. Verifica que SPARQLWrapper este instalado."
+
+    accion_lower = accion.lower().strip()
+
+    try:
+        if accion_lower == "especificaciones":
+            if not modelo:
+                return "Error: 'especificaciones' requiere el parametro 'modelo'."
+            results = kg_buscar_especificaciones(modelo)
+            return kg_format_para_llm(results, f"especificaciones de {modelo}")
+
+        elif accion_lower == "motor":
+            if not modelo:
+                return "Error: 'motor' requiere el parametro 'modelo'."
+            results = kg_buscar_motor(modelo)
+            return kg_format_para_llm(results, f"motor de {modelo}")
+
+        elif accion_lower == "comparar":
+            if not modelo or not modelo2:
+                return "Error: 'comparar' requiere los parametros 'modelo' y 'modelo2'."
+            results = kg_comparar_modelos(modelo, modelo2)
+            return kg_format_para_llm(results, f"comparativa {modelo} vs {modelo2}")
+
+        elif accion_lower == "por_marca":
+            if not marca:
+                return "Error: 'por_marca' requiere el parametro 'marca'."
+            results = kg_listar_modelos_por_marca(marca)
+            return kg_format_para_llm(results, f"modelos de {marca}")
+
+        elif accion_lower == "electricos":
+            results = kg_electricos_por_autonomia(autonomia_minima)
+            return kg_format_para_llm(results, f"electricos con autonomia >= {autonomia_minima} km")
+
+        elif accion_lower == "seguridad":
+            if not modelo:
+                return "Error: 'seguridad' requiere el parametro 'modelo'."
+            results = kg_sistemas_seguridad(modelo)
+            return kg_format_para_llm(results, f"sistemas de seguridad de {modelo}")
+
+        else:
+            return (
+                f"Accion desconocida: '{accion}'. "
+                "Acciones validas: especificaciones, motor, comparar, por_marca, electricos, seguridad."
+            )
+    except Exception as e:
+        return f"Error consultando el grafo de conocimiento: {e}"

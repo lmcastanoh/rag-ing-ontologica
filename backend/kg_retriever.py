@@ -45,8 +45,11 @@ def kg_buscar_especificaciones(modelo: str) -> list[dict]:
     """
     Recupera especificaciones técnicas estructuradas de un modelo desde el KG.
 
+    Usa matching flexible (CONTAINS) para tolerar variantes en el nombre
+    (ej. "Hilux" matchea "Toyota Hilux").
+
     Args:
-        modelo: Nombre del modelo (ej. "Golf", "Corolla", "ZS EV").
+        modelo: Nombre del modelo (ej. "Hilux", "Corolla", "CX-5").
 
     Returns:
         Lista de dicts con peso, longitud, baúl, precio, tipo de vehículo, etc.
@@ -55,7 +58,7 @@ def kg_buscar_especificaciones(modelo: str) -> list[dict]:
     SELECT ?nombreModelo ?marca ?tipo ?peso ?longitud ?baul ?precio ?anyo
     WHERE {{
         ?v :tieneNombreModelo ?nombreModelo .
-        FILTER(LCASE(STR(?nombreModelo)) = LCASE("{modelo}"))
+        FILTER(CONTAINS(LCASE(STR(?nombreModelo)), LCASE("{modelo}")))
         ?v :tieneMarca  ?marca .
         ?v a            ?tipo .
         FILTER(?tipo IN (:VehiculoCombustion, :VehiculoElectrico, :VehiculoHibrido))
@@ -83,7 +86,7 @@ def kg_buscar_motor(modelo: str) -> list[dict]:
     SELECT ?nombreModelo ?tipoMotor ?potencia ?cilindrada ?combustible ?autonomia ?bateria
     WHERE {{
         ?v :tieneNombreModelo ?nombreModelo .
-        FILTER(LCASE(STR(?nombreModelo)) = LCASE("{modelo}"))
+        FILTER(CONTAINS(LCASE(STR(?nombreModelo)), LCASE("{modelo}")))
         ?v :tieneMotor ?motor .
         ?motor :tienePotenciaCV ?potencia .
         OPTIONAL {{ ?motor :tieneCilindradaCc ?cilindrada }}
@@ -113,8 +116,8 @@ def kg_comparar_modelos(modelo1: str, modelo2: str) -> list[dict]:
     WHERE {{
         ?v :tieneNombreModelo ?nombreModelo .
         FILTER(
-            LCASE(STR(?nombreModelo)) = LCASE("{modelo1}") ||
-            LCASE(STR(?nombreModelo)) = LCASE("{modelo2}")
+            CONTAINS(LCASE(STR(?nombreModelo)), LCASE("{modelo1}")) ||
+            CONTAINS(LCASE(STR(?nombreModelo)), LCASE("{modelo2}"))
         )
         ?v :tieneMarca ?marca .
         OPTIONAL {{ ?v :tienePeso           ?peso }}
@@ -196,7 +199,7 @@ def kg_sistemas_seguridad(modelo: str) -> list[dict]:
     SELECT ?nombreModelo ?sistemaSeguridad
     WHERE {{
         ?v :tieneNombreModelo ?nombreModelo .
-        FILTER(LCASE(STR(?nombreModelo)) = LCASE("{modelo}"))
+        FILTER(CONTAINS(LCASE(STR(?nombreModelo)), LCASE("{modelo}")))
         ?v :tieneSistemaSeguridad ?sist .
         ?sist rdfs:label ?sistemaSeguridad .
         FILTER(LANG(?sistemaSeguridad) = "es")
