@@ -1,21 +1,27 @@
-# RAG Ontologica — Sistema RAG para Fichas Tecnicas Vehiculares
+# RAG Ontologica — Sistema RAG Agentico para Fichas Tecnicas Vehiculares
 
-Sistema de Generacion Aumentada por Recuperacion (RAG) especializado en fichas tecnicas
-de vehiculos. Permite consultar, resumir y comparar especificaciones de multiples marcas
-y modelos usando lenguaje natural.
+Sistema RAG (Retrieval-Augmented Generation) agentico especializado en fichas tecnicas
+de vehiculos. Usa una arquitectura **ReAct + Reflecting** con LangGraph, donde un agente
+razona autonomamente sobre que herramientas usar (busqueda vectorial MMR, HyDE,
+descomposicion de preguntas, comparacion, etc.), evalua su propia respuesta, y reintenta
+con feedback hasta 3 veces antes de escalar a busqueda web.
 
 ## Stack Tecnologico
 
 | Componente | Tecnologia |
 |------------|-----------|
 | Backend API | FastAPI + Uvicorn |
-| Orquestacion | LangGraph (grafo de estados) |
+| Orquestacion | LangGraph (grafo de estados con loops) |
 | LLM | OpenAI `gpt-5-nano` |
 | Embeddings | HuggingFace `all-MiniLM-L6-v2` |
-| Base vectorial | ChromaDB (persistencia local) |
+| Base vectorial | ChromaDB (chunking fijo o semantico) |
+| Busqueda | MMR (Maximal Marginal Relevance) |
 | Frontend | Streamlit |
 | OCR | EasyOCR (paginas escaneadas) |
 | Extraccion PDF | pdfplumber |
+| Web Search | DuckDuckGo (fallback) |
+| Tracing | LangSmith |
+| Evaluacion | Metricas custom + LLM-as-Judge |
 
 ---
 
@@ -25,27 +31,27 @@ y modelos usando lenguaje natural.
 rag-ing-ontologica/
 │
 ├── backend/
-│   ├── app.py              # API FastAPI: endpoints /ingest y /chat/stream
-│   ├── rag_graph.py         # Grafo LangGraph: flujo completo del RAG
-│   ├── rag_store.py         # ChromaDB: ingestion, embeddings, vector store
-│   ├── tools.py             # Tools de LangGraph (listar, buscar, comparar, resumir)
-│   ├── schemas.py           # Modelos Pydantic (IntentClassification, GroundingEvaluation)
-│   ├── prompts.py           # System prompts (clasificador, generador, critico)
-│   ├── data/                # PDFs organizados por marca (Toyota/, Mazda/, etc.)
-│   │   ├── Toyota/
-│   │   ├── Mazda/
-│   │   ├── Volkswagen/
-│   │   ├── Peugeot/
-│   │   ├── Opel/
-│   │   ├── MG Emotor/
-│   │   └── Seat/
-│   └── chroma_db/           # Base vectorial persistida (SQLite + HNSW)
+│   ├── app.py                # API FastAPI: endpoints /ingest, /chat/stream
+│   ├── rag_graph.py          # Grafo LangGraph: ReAct + Reflecting
+│   ├── rag_store.py          # ChromaDB: chunking fijo y semantico
+│   ├── tools.py              # 9 tools del agente ReAct
+│   ├── prompts.py            # System prompts (clasificador, ReAct, critico, judges)
+│   ├── schemas.py            # Modelos Pydantic
+│   ├── evaluation.py         # Metricas: Recall@k, Precision@k, MRR, nDCG, LLM-as-Judge
+│   ├── eval_dataset.py       # Dataset de ground truth para evaluacion
+│   ├── run_evaluation.py     # Script CLI para evaluacion batch
+│   ├── kg_rag_agent.py       # Agente RAG sobre Knowledge Graph (ontologia)
+│   ├── kg_retriever.py       # Retriever para SPARQL queries
+│   ├── ontologia/            # Ontologia OWL/RDF de vehiculos
+│   ├── data/                 # PDFs organizados por marca
+│   ├── chroma_db/            # Vector store con chunking fijo
+│   └── chroma_db_semantic/   # Vector store con chunking semantico
 │
 ├── frontend/
-│   └── streamlit_app.py     # Interfaz de chat Streamlit
+│   └── streamlit_app.py      # Interfaz de chat con trazabilidad visual
 │
-├── .env                     # Variables de entorno (OPENAI_API_KEY, HF_TOKEN)
-├── requeriments.txt         # Dependencias Python
+├── .env                      # Variables de entorno
+├── requeriments.txt          # Dependencias Python
 └── README.md
 ```
 
@@ -53,23 +59,21 @@ rag-ing-ontologica/
 
 ## Datos Disponibles
 
-- **6 marcas**: Toyota, Mazda, Volkswagen, Peugeot, Opel, MG Emotor, Seat
+- **7 marcas**: Toyota, Mazda, Volkswagen, Peugeot, Opel, MG Emotor, Seat
 - **50 modelos** indexados
-- **584 chunks** en ChromaDB
-- Metadata por chunk: `source`, `page`, `marca`, `modelo`, `doc_id`, `chunk_id`, `ocr`
+- **584 chunks** (fijo) / **476 chunks** (semantico) en ChromaDB
+- Metadata por chunk: `source`, `page`, `marca`, `modelo`, `doc_id`, `chunk_id`, `ocr`, `chunking`
 
 ---
 
-## Flujo General del Grafo RAG
-
-El sistema usa un grafo de estados LangGraph con 8 nodos y 4 rutas posibles:
+## Arquitectura: ReAct + Reflecting Agent
 
 ```
 START
   │
   ▼
 ┌─────────────────────┐
-│  1. classify_intent  │  LLM clasifica la pregunta en 4 intents
+│  classify_intent    │  Clasifica en Busqueda|Resumen|Comparacion|GENERAL
 └──────────┬──────────┘
            │
     ┌──────┴──────────────────────┐
@@ -77,103 +81,132 @@ START
  GENERAL                    needs_retrieval
     │                             │
     ▼                             ▼
-┌──────────────┐       ┌──────────────────┐
-│ answer_general│       │   2. retrieve     │  Busqueda semantica en ChromaDB
-└──────┬───────┘       └────────┬─────────┘
-       │                        │
-       ▼                        ▼
-      END              ┌──────────────────┐
-                       │  3. decide_tools  │  ¿Comparacion o Resumen?
-                       └────────┬─────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │                       │
-              usar_tools=true         usar_tools=false
-                    │                       │
-                    ▼                       │
-           ┌───────────────┐                │
-           │  4. call_tools │  LLM genera   │
-           └───────┬───────┘  tool_calls    │
-                   │                        │
-                   ▼                        │
-           ┌───────────────┐                │
-           │   5. tools     │  Ejecuta      │
-           └───────┬───────┘  las tools     │
-                   │                        │
-                   ▼                        │
-           ┌───────────────────────┐◄───────┘
-           │ 6. generate_grounded  │  Genera respuesta con citas
-           └───────────┬───────────┘
-                       │        ▲
-                       ▼        │ retry (score < 0.5 y retry < 1)
-           ┌───────────────────────┐
-           │ 7. evaluate_grounding │  Critico evalua calidad
-           └───────┬───────┬───────┘
-                   │       │
-              aprobado   rechazado + max retries
-                   │       │
-                   ▼       ▼
-                  END   fallback seguro → END
+┌──────────────┐       ┌───────────────────┐
+│ answer_general│       │   react_agent      │ ◄── Loop ReAct (max 7 iteraciones)
+└──────┬───────┘       │                    │     Thought → Action → Observation
+       │               │  9 tools disponibles│
+       ▼               └─────────┬──────────┘
+      END                        │
+                                 ▼
+                       ┌──────────────────┐
+                       │ generate_grounded │ ◄────┐
+                       └────────┬─────────┘      │
+                                │                │
+                                ▼                │ retry con feedback
+                       ┌──────────────────┐      │ (max 3 reintentos)
+                       │evaluate_grounding │      │
+                       └────────┬─────────┘      │
+                                │                │
+                                ▼                │
+                       ┌──────────────────┐      │
+                       │evaluate_metrics   │      │
+                       └────────┬─────────┘      │
+                                │                │
+                    ┌───────────┼────────────────┘
+                    │           │
+              aprobado     rechazado + 3 reintentos
+                    │           │
+                    ▼           ▼
+                   END   ┌──────────────┐
+                         │ web_fallback  │  Busqueda en internet
+                         └──────┬───────┘
+                                ▼
+                               END
 ```
 
-### Rutas del grafo
+### Patrones implementados
 
-| Ruta | Intent | Nodos | Descripcion |
-|------|--------|-------|-------------|
-| **A** | GENERAL | classify → answer_general → END | Conocimiento general sin retrieval |
-| **B** | Busqueda | classify → retrieve → decide_tools → generate → evaluate → END | Dato tecnico puntual |
-| **C** | Resumen | classify → retrieve → decide_tools → call_tools → tools → generate → evaluate → END | Ficha completa con tool `resumir_ficha` |
-| **D** | Comparacion | classify → retrieve → decide_tools → call_tools → tools → generate → evaluate → END | Tabla comparativa con tool `comparar_modelos` |
+| Patron | Implementacion |
+|--------|----------------|
+| **ReAct (Reasoning + Acting)** | El agente razona (Thought), elige tool (Action), observa resultado, decide si continuar. Loop de hasta 7 iteraciones. |
+| **Reflecting** | El critico evalua la respuesta y da feedback. Si score < 0.5, reintenta con correccion (max 3 veces). |
+| **Web Fallback** | Tras 3 fallos de reflexion, escala a busqueda web (DuckDuckGo). |
+| **Memory conversacional** | `last_model`/`last_make` persisten entre turnos via `MemorySaver` + reducer `_keep_latest`. |
 
-### Detalle de cada nodo
+### Tools del agente ReAct
 
-#### 1. `classify_intent` — Clasificador de intencion
-- **LLM**: gpt-5-nano (temperature=0)
-- Clasifica en: Busqueda, Resumen, Comparacion, GENERAL
-- Extrae entidades: marca, modelo, ano, version
-- Sugiere `suggested_k` (cuantos chunks recuperar)
-- Memory: si no hay modelo en la pregunta, usa `last_model`/`last_make` del turno anterior
-- Keyword fallback: regex corrige clasificaciones erroneas
+| Tool | Funcion | Busqueda |
+|------|---------|----------|
+| `buscar_vectorial` | Busqueda semantica en ChromaDB con filtros de metadata | MMR (lambda=0.7) |
+| `buscar_hyde` | HyDE: genera doc hipotetico y busca similares | MMR (lambda=0.7) |
+| `buscar_especificacion` | Dato tecnico puntual de un modelo | MMR (lambda=0.7) |
+| `buscar_por_marca` | Todos los modelos de una marca | MMR (lambda=0.5) |
+| `comparar_modelos` | Tabla comparativa entre 2 modelos | MMR (lambda=0.5) |
+| `resumir_ficha` | Resumen estructurado de un modelo | MMR (lambda=0.5) |
+| `descomponer_pregunta` | Divide preguntas complejas en sub-preguntas | — |
+| `listar_modelos_disponibles` | Catalogo completo indexado | — |
+| `buscar_web` | DuckDuckGo (solo en web_fallback) | — |
 
-#### 2. `retrieve` — Recuperacion semantica
-- Busca en ChromaDB usando `similarity_search`
-- **Dynamic k**: usa `suggested_k` del clasificador o mapa fijo
-- Reescribe la query para resolver referencias ("ese modelo" → nombre real)
-- Filtros de metadata por marca/modelo con variantes normalizadas
-- Comparaciones: retrieval balanceado (k/2 por cada modelo)
+> **MMR (Maximal Marginal Relevance)**: balance entre relevancia y diversidad.
+> `lambda=0.7` para busquedas puntuales, `lambda=0.5` para resumenes/comparaciones donde
+> se necesita cubrir distintas secciones de la ficha tecnica sin chunks redundantes.
 
-#### 3. `decide_tools` — Decision determinista
-- Comparacion y Resumen siempre activan tools
-- Busqueda no usa tools (genera directo desde contexto)
-- Keyword fallback como segunda red de seguridad
+---
 
-#### 4. `call_tools` + `tools` — Ejecucion de herramientas
-- **Tools disponibles**:
-  - `listar_modelos_disponibles` — catalogo de modelos indexados
-  - `buscar_especificacion` — dato tecnico puntual
-  - `buscar_por_marca` — todos los modelos de una marca
-  - `comparar_modelos` — tabla comparativa markdown
-  - `resumir_ficha` — resumen estructurado markdown
+## Modulo de Evaluacion
 
-#### 5. `generate_grounded` — Generacion con grounding
-- Combina contexto de retrieval + output de tools
-- Citas obligatorias: `[doc_id=<archivo>; pagina=<N>]`
-- Si es reintento, incluye feedback del critico como correccion
-- Guarda trazabilidad: prompt completo, snippets de chunks
+El sistema incluye un modulo completo de evaluacion con:
 
-#### 6. `evaluate_grounding` — Critico de calidad
-- Evalua: soportada por contexto, tiene citas, es completa
-- Score 0.0 - 1.0
-- Si rechazada (score < 0.5) y hay reintentos disponibles → vuelve a generar
-- Si rechazada sin reintentos → respuesta fallback segura
-- Maximo 1 reintento (configurable con `MAX_RETRIES`)
+### Metricas de Retrieval (con ground truth)
+- **Recall@k**: fraccion de docs relevantes recuperados
+- **Precision@k**: fraccion de docs recuperados que son relevantes
+- **MRR (Mean Reciprocal Rank)**: posicion del primer doc relevante
+- **nDCG@k**: relevancia ponderada por posicion
 
-### Features adicionales
+### LLM-as-Judge (sin ground truth)
+- **Relevance**: la respuesta es relevante para la pregunta?
+- **Faithfulness**: la respuesta es fiel al contexto (sin alucinacion)?
 
-- **Regeneration loop**: el critico puede rechazar y forzar un reintento con feedback correctivo
-- **Memory conversacional**: `last_model`/`last_make` persisten entre turnos con reducer `_keep_latest`
-- **Trazabilidad completa**: cada nodo registra su paso, decisiones, chunks, prompt enviado
-- **Anti-hallucination**: keyword override, grounding estricto, fallback seguro
+### Visualizacion en trazabilidad
+Las metricas de retrieval se calculan en cada query y se muestran en el expander de
+trazabilidad del frontend. Las metricas LLM-as-Judge solo se ejecutan en modo evaluacion
+batch (`eval_mode=True`) para no agregar latencia al chat.
+
+### Script de evaluacion batch
+
+```powershell
+cd backend
+python run_evaluation.py
+```
+
+Ejecuta las 17 preguntas del dataset de ground truth, calcula todas las metricas, imprime
+tabla resumen y guarda resultados en `eval_results.json`.
+
+---
+
+## Tracing con LangSmith
+
+El sistema esta integrado con [LangSmith](https://smith.langchain.com/) para tracing
+completo del grafo. Cada nodo tiene `RunnableLambda(...).with_config({run_name, tags, metadata})`,
+asi que LangSmith captura automaticamente el arbol de ejecucion completo.
+
+### Configurar LangSmith
+
+1. Crear cuenta en https://smith.langchain.com/
+2. Generar API key en **Settings → API Keys → Create API Key** (Personal Access Token)
+3. Agregar al `.env`:
+
+```env
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_TU_API_KEY_AQUI
+LANGCHAIN_PROJECT=rag-ontologica
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+```
+
+4. Reiniciar el backend. Al arrancar deberias ver:
+   ```
+   [LangSmith] Tracing ACTIVO — proyecto: rag-ontologica
+   ```
+
+5. Hacer una pregunta y ver el run completo en https://smith.langchain.com/
+
+### Lo que vera en LangSmith
+
+Cada query genera un trace con el arbol completo:
+- `Intent Classifier` → `ReAct Agent` (con todas las iteraciones y tool calls)
+- `Grounded Generator` → `Grounding Critic (Reflecting)` → `Metrics Evaluator`
+- Si aplica: `Web Fallback`
+- Por cada nodo: tiempo de ejecucion, tokens consumidos, prompts enviados, outputs
 
 ---
 
@@ -181,9 +214,10 @@ START
 
 ### Requisitos previos
 
-- **Python 3.12** — descargar de https://www.python.org/downloads/
-- **Git** — descargar de https://git-scm.com/
-- Cuenta de OpenAI con API key activa (para gpt-5-nano)
+- **Python 3.12** — https://www.python.org/downloads/
+- **Git** — https://git-scm.com/
+- Cuenta de OpenAI con API key activa
+- (Opcional) Cuenta de LangSmith para tracing
 
 ### 1. Clonar el repositorio
 
@@ -210,13 +244,23 @@ pip install -r requeriments.txt
 Crear archivo `.env` en la raiz del proyecto:
 
 ```env
+# OpenAI
 OPENAI_API_KEY=sk-tu-clave-aqui
 HF_TOKEN=hf-tu-token-aqui
+
+# Vector store: "fixed" (1000 chars) o "semantic" (SemanticChunker)
+CHROMA_STORE=fixed
+
+# LangSmith Tracing (opcional pero recomendado)
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_tu_key_aqui
+LANGCHAIN_PROJECT=rag-ontologica
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 ```
 
 ### 5. Agregar documentos PDF
 
-Colocar los PDFs dentro de `backend/data/` organizados por marca:
+Colocar PDFs dentro de `backend/data/` organizados por marca:
 
 ```
 backend/data/
@@ -241,21 +285,14 @@ Verificar en: http://localhost:8001/docs
 
 ### 7. Ingestar documentos
 
-Desde Swagger UI (http://localhost:8001/docs) o con curl:
+Desde el frontend (boton "Ingestar") o con curl:
 
 ```powershell
+# Chunking fijo (1000 chars)
 curl -X POST http://localhost:8001/ingest -H "Content-Type: application/json" -d "{\"data_dir\": \"./data\"}"
-```
 
-Respuesta esperada:
-
-```json
-{
-  "files_dir": "./data",
-  "raw_docs": 50,
-  "chunks": 584,
-  "ids_added": 584
-}
+# Chunking semantico (SemanticChunker)
+curl -X POST http://localhost:8001/ingest/semantic -H "Content-Type: application/json" -d "{\"data_dir\": \"./data\"}"
 ```
 
 ### 8. Ejecutar el frontend (Terminal 2)
@@ -269,81 +306,91 @@ streamlit run streamlit_app.py
 
 Acceder en: http://localhost:8501
 
+### 9. (Opcional) Ejecutar evaluacion batch
+
+```powershell
+cd backend
+python run_evaluation.py
+```
+
 ---
 
 ## Endpoints de la API
 
-### `POST /ingest`
-
-Ingesta documentos PDF desde un directorio.
+### `POST /ingest` — Ingesta con chunking fijo
 
 ```json
 // Request
 {"data_dir": "./data"}
 
 // Response
-{"files_dir": "./data", "raw_docs": 50, "chunks": 584, "ids_added": 584}
+{"files_dir": "./data", "raw_docs": 277, "chunks": 584, "ids_added": 584}
 ```
 
-### `POST /chat/stream`
-
-Chat con streaming via Server-Sent Events (SSE).
+### `POST /ingest/semantic` — Ingesta con chunking semantico
 
 ```json
 // Request
-{"question": "¿Cual es la potencia del Toyota Hilux?", "session_id": "sesion-1"}
+{"data_dir": "./data"}
+
+// Response
+{"files_dir": "./data", "raw_docs": 277, "chunks": 476, "ids_added": 476, "chunking_method": "semantic"}
+```
+
+### `POST /chat/stream` — Chat con streaming SSE
+
+```json
+// Request
+{"question": "Cual es la potencia del Toyota Hilux?", "session_id": "sesion-1"}
 ```
 
 Eventos SSE:
 - `token` — respuesta final del RAG
-- `trazabilidad` — JSON con la ruta completa, decisiones, chunks, evaluacion
+- `trazabilidad` — JSON con la ruta completa del grafo, pasos ReAct, metricas, etc.
 - `done` — fin del stream
+
+---
+
+## Trazabilidad en el Frontend
+
+El expander "Trazabilidad de la respuesta" muestra:
+
+- **Ruta del grafo**: nodos visitados (ej: `classify_intent → react_agent → generate_grounded → evaluate_grounding → evaluate_metrics`)
+- **Clasificacion**: intent detectado y entidades extraidas
+- **Pasos ReAct**: cada thought, action y action input del agente
+- **Chunks recuperados**: doc_id, pagina y chunk_id de cada chunk usado
+- **Verificacion**: score del critico, issues, reintentos
+- **Metricas**: Recall@k, Precision@k, MRR, nDCG@k (siempre), Relevance + Faithfulness (en eval mode)
+- **Fallback web**: indicador si se uso busqueda en internet
 
 ---
 
 ## Solucion de problemas
 
+### Error 401 de LangSmith
+
+Si ves `LangSmithAuthError: 401 Unauthorized` al enviar trazas:
+1. Verifica que `LANGCHAIN_API_KEY` este correctamente seteada en `.env`
+2. **Reinicia el backend** completamente (mata uvicorn y vuelvelo a arrancar) — el proceso debe leer las nuevas variables al iniciar
+
 ### Puerto en uso
 
 ```powershell
-# Encontrar proceso usando el puerto
 netstat -ano | findstr :8001
-# Terminar proceso (reemplazar PID)
 taskkill /PID <PID> /F
-# O usar otro puerto
-uvicorn app:app --reload --port 8002
 ```
-
-### Error de OpenAI 401
-
-Verificar que `OPENAI_API_KEY` esta configurada en `.env`.
 
 ### Error de OpenAI 429 (cuota excedida)
 
 Verificar creditos en: https://platform.openai.com/account/billing
 
-### Streamlit no encontrado
-
-```powershell
-pip install streamlit
-```
-
 ### EasyOCR lento en primera ejecucion
 
 Es normal: descarga modelos de ~100 MB la primera vez. Las ejecuciones siguientes usan cache.
 
----
+### Ingesta semantica falla con "client closed"
 
-## Visualizar estructura del grafo
-
-El grafo se imprime en ASCII al iniciar el backend. Para generar diagrama Mermaid:
-
-```python
-# En rag_graph.py
-print(graph.get_graph().draw_mermaid())
-```
-
-Pegar el resultado en: https://mermaid.live
+Asegurate de tener la version actualizada de `rag_store.py` con singleton de embeddings.
 
 ---
 
@@ -355,4 +402,13 @@ cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd backend && uvicorn app:a
 
 # Frontend (otra terminal)
 cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd frontend && streamlit run streamlit_app.py
+
+# Evaluacion batch
+cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd backend && python run_evaluation.py
 ```
+
+---
+
+## Licencia
+
+Proyecto academico — RAG Ontologica 2026
