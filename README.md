@@ -48,7 +48,8 @@ rag-ing-ontologica/
 │   ├── eval_dataset.py         # Dataset de ground truth
 │   ├── run_evaluation.py       # Script CLI para evaluacion batch
 │   ├── kg_retriever.py         # Funciones SPARQL para consultar el Knowledge Graph
-│   ├── kg_rag_agent.py         # Agente RAG sobre el grafo de conocimiento
+│   ├── kg_rag_agent.py         # [DEPRECATED] Agente legacy KG-RAG (reemplazado por la
+│   │                           #   tool consultar_grafo_conocimiento del grafo principal)
 │   ├── ontologia/              # Ontologia OWL/RDF de vehiculos
 │   │   └── vehiculos_completo.ttl
 │   ├── data/                   # PDFs organizados por marca
@@ -148,6 +149,13 @@ START
 | **Query Transformer** | Detecta automaticamente si la consulta necesita HyDE (corta/ambigua) o Decomposition (multiples preguntas/condicionales). |
 | **Web Fallback con feedback** | Tras 3 fallos de reflexion, busca en DuckDuckGo, responde, **e ingiere los resultados a ChromaDB** para futuras consultas. |
 | **Memory conversacional** | `last_model`/`last_make` persisten entre turnos via `MemorySaver`. |
+
+> **Nota: arquitectura unificada.** El frontend siempre usa el grafo principal
+> via `/chat/stream`. El Knowledge Graph se accede como una **tool del agente
+> ReAct** (`consultar_grafo_conocimiento`), no como un flujo separado. Esto
+> garantiza que toda consulta pase por classify_intent (filtrando preguntas
+> GENERAL), query_transformer, ReAct, Reflecting y evaluate_metrics. El archivo
+> `kg_rag_agent.py` y el endpoint `/kg_chat` quedan deprecados.
 
 ---
 
