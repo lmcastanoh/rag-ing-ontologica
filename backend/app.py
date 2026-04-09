@@ -22,6 +22,13 @@ if str(_backend_dir) not in sys.path:
     sys.path.insert(0, str(_backend_dir))
 
 from dotenv import load_dotenv
+
+# IMPORTANTE: cargar .env ANTES de importar rag_graph para que las variables
+# de LangSmith (LANGCHAIN_TRACING_V2, LANGCHAIN_API_KEY, LANGCHAIN_PROJECT)
+# esten disponibles cuando LangChain inicialice el cliente de tracing.
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage, ToolMessage
@@ -31,9 +38,12 @@ from sse_starlette.sse import EventSourceResponse
 from rag_graph import build_rag_graph
 from rag_store import ingest, ingest_semantic, get_vector_store, get_semantic_vector_store
 
-# Cargar .env desde la raiz del proyecto (un nivel arriba de backend/)
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+# Reportar estado de LangSmith al arrancar
+import os
+if os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true" and os.getenv("LANGCHAIN_API_KEY"):
+    print(f"[LangSmith] Tracing ACTIVO — proyecto: {os.getenv('LANGCHAIN_PROJECT', 'default')}")
+else:
+    print("[LangSmith] Tracing inactivo (configura LANGCHAIN_TRACING_V2 y LANGCHAIN_API_KEY en .env)")
 
 app = FastAPI(title="LangGraph RAG API")
 
