@@ -17,8 +17,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Cargar .env
-env_path = Path(__file__).resolve().parents[2] / ".env"
+# Cargar .env (un nivel arriba de backend/) — debe ir ANTES de importar
+# rag_graph para que LangSmith inicialice el tracing correctamente.
+env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 from langchain_core.messages import HumanMessage
