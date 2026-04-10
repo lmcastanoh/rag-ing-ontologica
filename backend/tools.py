@@ -334,23 +334,30 @@ def buscar_vectorial(query: str, k: int = 6, modelo: str = "", marca: str = "") 
     """
     vs = get_active_vector_store()
 
-    where_filter = None
-    if modelo and len(modelo) >= 2:
-        where_filter = {"modelo": {"$in": _model_variants(modelo, marca or None)}}
-    elif marca and len(marca) >= 2:
-        where_filter = {"marca": marca}
+    # Filtro base: excluir chunks de web_fallback (acumulados de busquedas web pasadas)
+    # para que no contaminen los resultados de los PDFs reales.
+    base_filter = {"origen": {"$ne": "web_fallback"}}
 
-    if where_filter:
-        results = vs.max_marginal_relevance_search(
-            query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=where_filter,
-        )
-        if not results:
-            results = vs.max_marginal_relevance_search(
-                query, k=k, fetch_k=k * 3, lambda_mult=0.7,
-            )
+    if modelo and len(modelo) >= 2:
+        where_filter = {
+            "$and": [
+                base_filter,
+                {"modelo": {"$in": _model_variants(modelo, marca or None)}},
+            ]
+        }
+    elif marca and len(marca) >= 2:
+        where_filter = {"$and": [base_filter, {"marca": marca}]}
     else:
+        where_filter = base_filter
+
+    results = vs.max_marginal_relevance_search(
+        query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=where_filter,
+    )
+    # Fallback: si no hay resultados con filtros de modelo/marca, reintentar
+    # solo con el filtro base (excluyendo web_fallback)
+    if not results and (modelo or marca):
         results = vs.max_marginal_relevance_search(
-            query, k=k, fetch_k=k * 3, lambda_mult=0.7,
+            query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=base_filter,
         )
 
     if not results:
@@ -389,8 +396,10 @@ def buscar_hyde(pregunta: str, k: int = 6) -> str:
     hypo_text = str(hypo_response.content)
 
     vs = get_active_vector_store()
+    # Excluir chunks de web_fallback acumulados para no contaminar resultados
     results = vs.max_marginal_relevance_search(
         hypo_text, k=k, fetch_k=k * 3, lambda_mult=0.7,
+        filter={"origen": {"$ne": "web_fallback"}},
     )
 
     if not results:

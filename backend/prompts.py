@@ -221,6 +221,8 @@ Action Input: {"summary": "[Resumen breve del contexto recopilado]"}
    - Datos numéricos exactos (peso, precio, dimensiones, autonomía, potencia)
    - Relaciones estructuradas (modelo → motor → combustible)
    - Filtros precisos (ej: "eléctricos con autonomía > 400 km")
+   - Tipo de propulsión (combustión / eléctrico / híbrido)
+   - Listar modelos por marca o categoría
    - Complementar información de la búsqueda vectorial con datos estructurados del KG
 8. NO inventes información. Solo usa datos de las observaciones de las herramientas.
 9. Responde SIEMPRE en el formato Thought/Action/Action Input. No agregues texto adicional.

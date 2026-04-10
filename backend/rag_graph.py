@@ -82,6 +82,7 @@ from tools import (
 # ── Configuracion ──────────────────────────────────────────────────────────
 MAX_REACT_ITERATIONS = 5   # Maximo de pasos Thought/Action/Observation (era 7, reducido para latencia)
 MAX_RETRIES = 3            # Maximo de reintentos del reflecting loop
+MAX_FINAL_CHUNKS = 12      # Cap de chunks finales pasados a generate_grounded (despues de dedupe)
 
 
 def _keep_latest(existing: Optional[str], new: Optional[str]) -> Optional[str]:
@@ -629,12 +630,42 @@ def build_rag_graph():
                         metadata={"source": "tool_output", "doc_id": "tool_output"},
                     ))
 
+        # ── Deduplicacion + cap ─────────────────────────────────────────
+        # Despues de varias iteraciones ReAct, los docs acumulados pueden tener
+        # duplicados (la misma seccion del PDF retornada por tools distintas) o
+        # ser demasiados (>20). Deduplicar por chunk_id (o doc_id+page como
+        # fallback) y truncar a MAX_FINAL_CHUNKS preservando el orden de aparicion
+        # (los chunks de iteraciones tempranas suelen ser los mas relevantes).
+        seen_keys: set[str] = set()
+        deduped: List[Document] = []
+        total_before_dedupe = len(docs)
+        for d in docs:
+            md = d.metadata or {}
+            # Clave de identidad: chunk_id si existe, sino doc_id+page, sino content[:80]
+            key = (
+                md.get("chunk_id")
+                or f"{md.get('doc_id', '')}|{md.get('page', '')}"
+                or d.page_content[:80]
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(d)
+            if len(deduped) >= MAX_FINAL_CHUNKS:
+                break
+        docs = deduped
+
         traza = dict(state.get("trazabilidad") or {})
         traza["ruta"] = traza.get("ruta", []) + ["react_agent"]
         traza["react_steps"] = react_steps
         traza["react_iterations"] = len(react_steps)
         traza["chunks_recuperados"] = _retrieved_chunk_payload(docs)
         traza["k_utilizado"] = len(docs)
+        traza["chunks_dedupe"] = {
+            "antes": total_before_dedupe,
+            "despues": len(docs),
+            "cap_aplicado": MAX_FINAL_CHUNKS,
+        }
 
         return {
             "docs": docs,

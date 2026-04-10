@@ -477,7 +477,8 @@ El expander "Trazabilidad de la respuesta" muestra:
 - **Clasificacion**: intent detectado y entidades extraidas
 - **Transformaciones de consulta**: HyDE y/o Decomposition aplicadas con justificacion
 - **Pasos ReAct**: cada thought, action y action input del agente
-- **Chunks recuperados**: doc_id, pagina y chunk_id
+- **Chunks recuperados**: doc_id, pagina y chunk_id (max 12 despues de dedupe)
+- **Chunks dedupe**: `{antes, despues, cap_aplicado}` mostrando cuantos chunks se descartaron
 - **Verificacion**: score del critico, issues, reintentos
 - **Metricas**: Recall@k, Precision@k, MRR, nDCG@k (siempre), Relevance + Faithfulness (en eval mode)
 - **Web fallback**: indicador si se uso busqueda en internet
@@ -568,6 +569,25 @@ Limites configurables en `backend/rag_graph.py`:
 |-----------|-------|-------------|
 | `MAX_REACT_ITERATIONS` | `5` | Maximo de pasos Thought/Action/Observation del agente ReAct |
 | `MAX_RETRIES` | `3` | Maximo de reintentos del reflecting loop antes de escalar a web_fallback |
+| `MAX_FINAL_CHUNKS` | `12` | Cap de chunks finales pasados a `generate_grounded` (despues de dedupe) |
+
+### Deduplicacion + cap de chunks
+
+Despues de varias iteraciones del agente ReAct, los chunks acumulados pueden tener
+duplicados (la misma seccion del PDF retornada por tools distintas). Al final del nodo
+`react_agent` se aplica:
+
+1. **Deduplicacion** por `chunk_id` (o `doc_id+page` como fallback)
+2. **Cap** a los primeros 12 chunks unicos preservando el orden de aparicion
+3. La trazabilidad incluye un campo `chunks_dedupe: {antes, despues, cap_aplicado}`
+   para que veas cuantos chunks habia antes y despues del filtrado
+
+### Filtro anti-contaminacion del web_fallback
+
+`buscar_vectorial` y `buscar_hyde` aplican un filtro `{"origen": {"$ne": "web_fallback"}}`
+para que los chunks ingeridos por web_fallback en corridas previas no contaminen las
+busquedas vectoriales normales. Los chunks web quedan aislados y solo se usan si
+explicitamente se invoca `web_fallback`.
 
 ### Optimizaciones de latencia aplicadas
 
@@ -576,6 +596,9 @@ Limites configurables en `backend/rag_graph.py`:
 - **Scratchpad ReAct truncado** a 250 chars por observation para reducir tokens
 - **Singleton de embeddings** HuggingFace para evitar reload del modelo
 - **Routing condicional** correcto en `route_after_metrics` (`< MAX_RETRIES` estricto)
+- **Sanitizacion `_sanitize_for_llm()`** elimina caracteres de control y null bytes
+  de chunks corruptos de PDFs (evita error 400 de OpenAI por JSON invalido)
+- **Dedupe + cap de chunks** reduce contexto enviado a `generate_grounded`
 
 ---
 
