@@ -276,6 +276,28 @@ Tras 3 reintentos fallidos, el flujo escala a `web_fallback`:
 ### Visualizacion en trazabilidad
 Las metricas de retrieval se calculan **en cada query** y se muestran en el expander de trazabilidad. Las metricas LLM-as-Judge solo se ejecutan en modo evaluacion batch (`eval_mode=True`) para no agregar latencia al chat.
 
+### Matcher de ground truth (tildes + identificadores de modelo)
+
+El nodo `evaluate_metrics` busca la pregunta del usuario en `EVAL_DATASET` para
+encontrar los `relevant_doc_ids` y calcular Recall/Precision/MRR/nDCG. El matcher
+hace dos pasadas:
+
+1. **Substring** (legacy): match exacto/parcial entre la pregunta y las del dataset.
+2. **Overlap de tokens significativos** (≥ 3 tokens en comun) si no hubo match
+   exacto, para que variantes como "Cual es la potencia del CX-30?" matcheen con
+   "Cual es la potencia del Mazda CX-30?".
+
+El tokenizador:
+
+- **Normaliza tildes** (`unicodedata.NFKD`) para que `"transmisión"` matchee con
+  `"transmision"` del dataset.
+- **Captura identificadores de modelo con guion** (`cx-5`, `cx-30`, `mx-5`, `m3`)
+  como un solo token. Antes el regex `[a-z0-9]+` los partia en `["cx", "5"]` y
+  ambos quedaban descartados por `len < 3`, perdiendo la palabra clave mas
+  distintiva de la pregunta.
+- **Acepta tokens cortos con digito o guion**, para que identificadores tipo `m3`
+  o `cx-5` no se filtren por longitud.
+
 ### Script de evaluacion batch
 
 ```powershell
@@ -588,6 +610,19 @@ duplicados (la misma seccion del PDF retornada por tools distintas). Al final de
 para que los chunks ingeridos por web_fallback en corridas previas no contaminen las
 busquedas vectoriales normales. Los chunks web quedan aislados y solo se usan si
 explicitamente se invoca `web_fallback`.
+
+### Cabeceras de citas en `generate_grounded`
+
+El nodo `react_agent` parsea las cabeceras `[doc_id=...; pagina=...; chunk_id=...]`
+de cada chunk y las extrae a `Document.metadata`, removiendolas del `page_content`.
+Por eso `generate_grounded` reconstruye la cabecera desde la metadata antes de armar
+el contexto que se le pasa al LLM. Sin esto, el LLM no tiene de donde copiar el
+`doc_id` real y termina inventando uno a partir del titulo tipografico del PDF, lo
+que hace que el critico rechace la respuesta por citas no validas.
+
+Los outputs de tools sin cabecera estructurada (`comparar_modelos`, `resumir_ficha`)
+se identifican por `doc_id="tool_output"` y se concatenan tal cual, sin inyectar
+cabecera falsa.
 
 ### Optimizaciones de latencia aplicadas
 

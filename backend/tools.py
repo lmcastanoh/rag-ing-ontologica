@@ -64,15 +64,35 @@ def _build_retrieval_filter(entities: dict[str, Any] | None) -> dict | None:
 
 
 def _fix_doubled_text(text: str) -> str:
-    """Corrige texto con caracteres duplicados por extraccion corrupta de PDF."""
+    """Corrige texto con caracteres duplicados por extraccion corrupta de PDF.
+
+    Aplica la correccion LINEA POR LINEA en lugar de al texto completo, porque
+    en muchos PDFs solo los titulos/encabezados tienen letras duplicadas
+    (ej: "EESSPPEECCIIFFIICCAACCIIOONNEESS") mientras que el resto del chunk
+    (incluyendo datos numericos como "20,39 kg-m") esta en formato normal.
+
+    Aplicar text[::2] al chunk entero destruia los datos reales. Ahora solo se
+    aplica a lineas individuales que cumplan el criterio de duplicacion.
+    """
     if len(text) < 10:
         return text
-    sample = text[:60]
-    doubles = len(re.findall(r"([A-Za-z0-9])\1", sample))
-    alphanums = len(re.findall(r"[A-Za-z0-9]", sample))
-    if alphanums > 4 and (doubles * 2) / alphanums > 0.7:
-        return text[::2]
-    return text
+
+    def _line_is_doubled(line: str) -> bool:
+        if len(line) < 10:
+            return False
+        sample = line[:60]
+        doubles = len(re.findall(r"([A-Za-z0-9])\1", sample))
+        alphanums = len(re.findall(r"[A-Za-z0-9]", sample))
+        return alphanums > 4 and (doubles * 2) / alphanums > 0.7
+
+    lines = text.split("\n")
+    fixed_lines = []
+    for line in lines:
+        if _line_is_doubled(line):
+            fixed_lines.append(line[::2])
+        else:
+            fixed_lines.append(line)
+    return "\n".join(fixed_lines)
 
 
 def _retrieval_context(docs: List[Document]) -> str:
@@ -149,21 +169,46 @@ def buscar_especificacion(especificacion: str, modelo: str) -> str:
     """
     vs = get_active_vector_store()
 
+    # Excluir chunks de web_fallback para no contaminar la busqueda
+    base_filter = {"origen": {"$ne": "web_fallback"}}
+
+    # Query enriquecida: usar terminos que aparecen en las tablas de specs de los PDFs
+    # ("maxima", "motor", "kg-m", "Nm", "hp", "rpm") para que el MMR rankee mejor
+    # los chunks con datos numericos en lugar de los chunks de marketing.
+    rich_query = f"{especificacion} maximo motor especificaciones tecnicas {modelo}"
+
+    # Intento 1: con filtro de modelo (variantes) - mejor precision
+    where_filter = {
+        "$and": [
+            base_filter,
+            {"modelo": {"$in": _model_variants(modelo)}},
+        ]
+    }
     results = vs.max_marginal_relevance_search(
-        f"{especificacion} {modelo}",
-        k=6,
-        fetch_k=20,
-        lambda_mult=0.7,
+        rich_query,
+        k=8,
+        fetch_k=25,
+        lambda_mult=0.6,  # mas diversidad para cubrir distintas versiones del motor
+        filter=where_filter,
     )
+
+    # Intento 2: sin filtro de modelo (solo excluir web_fallback) - mas recall
+    if not results:
+        results = vs.max_marginal_relevance_search(
+            rich_query,
+            k=8,
+            fetch_k=25,
+            lambda_mult=0.6,
+            filter=base_filter,
+        )
 
     if not results:
         return f"No se encontró información sobre '{especificacion}' para el modelo '{modelo}'."
 
-    fragmentos = "\n---\n".join(
-        f"[{d.metadata.get('source', '')} p.{d.metadata.get('page', '')}]\n{d.page_content}"
-        for d in results
-    )
-    return fragmentos
+    # Usar _retrieval_context para formato estandar [doc_id=...; página=...; chunk_id=...]
+    # asi el parser del react_agent puede extraer la metadata correctamente y
+    # el generate_grounded puede citar correctamente los chunks.
+    return _retrieval_context(results)
 
 
 @tool
@@ -184,22 +229,26 @@ def buscar_por_marca(marca: str) -> str:
     """
     vs = get_active_vector_store()
 
+    # Filtrar por marca y excluir web_fallback
+    where_filter = {
+        "$and": [
+            {"origen": {"$ne": "web_fallback"}},
+            {"marca": marca},
+        ]
+    }
     results = vs.max_marginal_relevance_search(
         marca,
         k=10,
         fetch_k=30,
         lambda_mult=0.5,
-        filter={"marca": marca},
+        filter=where_filter,
     )
 
     if not results:
         return f"No se encontró información para la marca '{marca}'."
 
-    fragmentos = "\n---\n".join(
-        f"[{d.metadata.get('modelo', '')} p.{d.metadata.get('page', '')}]\n{d.page_content}"
-        for d in results
-    )
-    return f"Información de {marca}:\n\n{fragmentos}"
+    # Formato estandar para que el parser del react_agent extraiga metadata
+    return f"Información de {marca}:\n\n" + _retrieval_context(results)
 
 
 @tool
@@ -338,6 +387,15 @@ def buscar_vectorial(query: str, k: int = 6, modelo: str = "", marca: str = "") 
     # para que no contaminen los resultados de los PDFs reales.
     base_filter = {"origen": {"$ne": "web_fallback"}}
 
+    results = []
+
+    # Estrategia de fallback en cascada para maximizar la probabilidad de match:
+    # 1) Filtro estricto por modelo (con variantes) + base_filter
+    # 2) Si falla, filtro por marca + base_filter (aprovecha que el clasificador
+    #    extrajo marca aunque el modelo no haya matcheado variantes)
+    # 3) Si falla, solo base_filter (busqueda semantica pura sin restriccion)
+
+    # Intento 1: modelo + marca
     if modelo and len(modelo) >= 2:
         where_filter = {
             "$and": [
@@ -345,17 +403,19 @@ def buscar_vectorial(query: str, k: int = 6, modelo: str = "", marca: str = "") 
                 {"modelo": {"$in": _model_variants(modelo, marca or None)}},
             ]
         }
-    elif marca and len(marca) >= 2:
-        where_filter = {"$and": [base_filter, {"marca": marca}]}
-    else:
-        where_filter = base_filter
+        results = vs.max_marginal_relevance_search(
+            query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=where_filter,
+        )
 
-    results = vs.max_marginal_relevance_search(
-        query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=where_filter,
-    )
-    # Fallback: si no hay resultados con filtros de modelo/marca, reintentar
-    # solo con el filtro base (excluyendo web_fallback)
-    if not results and (modelo or marca):
+    # Intento 2: solo marca (cuando el filtro de modelo no matcheo nada)
+    if not results and marca and len(marca) >= 2:
+        where_filter = {"$and": [base_filter, {"marca": marca}]}
+        results = vs.max_marginal_relevance_search(
+            query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=where_filter,
+        )
+
+    # Intento 3: solo base_filter (sin restricciones de marca/modelo)
+    if not results:
         results = vs.max_marginal_relevance_search(
             query, k=k, fetch_k=k * 3, lambda_mult=0.7, filter=base_filter,
         )

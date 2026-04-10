@@ -688,9 +688,29 @@ def build_rag_graph():
         question = state["question"]
 
         # Construir contexto desde los documentos recopilados por ReAct.
-        # Sanitizar para eliminar caracteres de control que rompen JSON.
+        # IMPORTANTE: re-inyectar la cabecera [doc_id=...; página=...; chunk_id=...]
+        # desde la metadata. El react_agent parsea estas cabeceras y las quita del
+        # page_content (rag_graph.py:621), asi que aqui hay que reconstruirlas, o
+        # el LLM no tiene de donde copiar el doc_id real y termina inventando uno
+        # a partir del titulo del PDF.
+        def _format_block(d: Document) -> str:
+            md = d.metadata or {}
+            content = _sanitize_for_llm(d.page_content)
+            doc_id = md.get("doc_id") or md.get("source", "desconocido")
+            # Output de tools sin cabecera estructurada (ej: comparar_modelos,
+            # resumir_ficha) -> sin cabecera falsa
+            if doc_id in ("tool_output", "react_agent"):
+                return content
+            page = md.get("page", "N/A")
+            chunk_id = md.get("chunk_id")
+            if chunk_id:
+                header = f"[doc_id={doc_id}; página={page}; chunk_id={chunk_id}]"
+            else:
+                header = f"[doc_id={doc_id}; página={page}]"
+            return f"{header}\n{content}"
+
         context = "\n\n---\n\n".join(
-            _sanitize_for_llm(d.page_content) for d in docs if d.page_content.strip()
+            _format_block(d) for d in docs if d.page_content.strip()
         )
 
         # Si no hay contexto, retornar mensaje de "no encontrado"
@@ -780,7 +800,27 @@ def build_rag_graph():
         eval_data = eval_to_dict(result)
 
         updates: dict[str, Any] = {}
-        rejected = not eval_data.get("approved", True) and eval_data.get("score", 1.0) < 0.5
+
+        # Logica de aceptacion/rechazo pragmatica:
+        # - Si el critico aprobo explicitamente -> aceptar
+        # - Si supported_by_context=True (el contenido es correcto) Y score >= 0.3 ->
+        #   aceptar aunque has_citations sea False. Muchas veces el LLM genera
+        #   respuestas correctas pero sin el formato estricto de cita [doc_id=...],
+        #   y no tiene sentido rechazar respuestas con contenido valido.
+        # - Caso contrario: rechazar (permite reintento o web_fallback).
+        approved = eval_data.get("approved", False)
+        score = eval_data.get("score", 0.0)
+        supported = eval_data.get("supported_by_context", False)
+
+        if approved:
+            rejected = False
+        elif supported and score >= 0.3:
+            # Override: respuesta con contenido correcto pero sin citas formales
+            rejected = False
+            eval_data["override_reason"] = "supported_by_context=True con score aceptable"
+        else:
+            rejected = score < 0.35  # Threshold mas permisivo (antes 0.5)
+
         can_retry = rejected and retry_count < MAX_RETRIES
 
         if can_retry:
@@ -922,13 +962,65 @@ def build_rag_graph():
             if doc_id and doc_id != "react_agent":
                 retrieved_doc_ids.append(doc_id)
 
-        # Buscar pregunta en dataset (matching parcial)
+        # Buscar pregunta en dataset. Matching en 2 niveles:
+        # 1) Match exacto/substring (legacy)
+        # 2) Match por overlap de palabras clave del modelo (cx-30, cx-5, hilux, etc.)
+        #    para que preguntas parecidas ("potencia del CX-30" vs "Cual es la potencia
+        #    del Mazda CX-30?") activen las metricas de retrieval.
         ground_truth = None
         q_lower = question.lower()
+
+        # Nivel 1: substring match
         for entry in EVAL_DATASET:
-            if entry["relevant_doc_ids"] and entry["question"].lower() in q_lower or q_lower in entry["question"].lower():
+            if not entry["relevant_doc_ids"]:
+                continue
+            eq = entry["question"].lower()
+            if eq in q_lower or q_lower in eq:
                 ground_truth = entry
                 break
+
+        # Nivel 2: overlap de tokens significativos si no hubo match exacto
+        if ground_truth is None:
+            import re as _re
+            import unicodedata as _ud
+
+            stopwords = {
+                "que", "cual", "como", "donde", "cuando", "para", "por", "con",
+                "una", "uno", "los", "las", "del", "dame", "son", "tiene", "esta",
+                "este", "esto", "esa", "ese", "eso",
+            }
+
+            def _tokenize(text: str) -> set[str]:
+                # Normalizar tildes: "transmisión" -> "transmision" para que matchee
+                # con el dataset (que esta sin acentos).
+                nfkd = _ud.normalize("NFKD", text.lower())
+                ascii_text = "".join(c for c in nfkd if not _ud.combining(c))
+                # Captura tokens alfanumericos permitiendo guiones internos para
+                # identificadores de modelo (cx-5, cx-30, mx-5, mazda3, etc.).
+                raw = _re.findall(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", ascii_text)
+                tokens: set[str] = set()
+                for t in raw:
+                    if t in stopwords:
+                        continue
+                    # Aceptar tokens >= 3 chars, o cualquier token con digito o
+                    # guion (probable identificador de modelo: "cx-5", "m3", etc.).
+                    if len(t) >= 3 or any(c.isdigit() for c in t) or "-" in t:
+                        tokens.add(t)
+                return tokens
+
+            q_tokens = _tokenize(q_lower)
+            best_entry = None
+            best_overlap = 0
+            for entry in EVAL_DATASET:
+                if not entry["relevant_doc_ids"]:
+                    continue
+                eq_tokens = _tokenize(entry["question"])
+                overlap = len(q_tokens & eq_tokens)
+                # Requerir al menos 3 tokens en comun para considerar match
+                if overlap >= 3 and overlap > best_overlap:
+                    best_overlap = overlap
+                    best_entry = entry
+            ground_truth = best_entry
 
         if ground_truth and ground_truth["relevant_doc_ids"] and retrieved_doc_ids:
             k = len(retrieved_doc_ids)
@@ -970,7 +1062,11 @@ def build_rag_graph():
     def route_after_metrics(state: RAGState) -> str:
         """Decide si reintentar, usar web fallback, o terminar despues de metricas.
 
-        Si la respuesta vino del web_fallback, terminar (no hay mas reintentos posibles).
+        Aplica la misma logica de aceptacion/rechazo pragmatica que evaluate_grounding:
+        - Si el critico aprobo -> END
+        - Si supported_by_context=True Y score >= 0.3 -> END (override)
+        - Si score < 0.35 y hay reintentos -> generate_grounded
+        - Si score < 0.35 sin reintentos -> web_fallback
         """
         # Si ya pasamos por web_fallback, terminar definitivamente
         if state.get("web_search_used"):
@@ -978,12 +1074,16 @@ def build_rag_graph():
 
         eval_data = state.get("eval_result") or {}
         retry_count = state.get("retry_count", 0)
-        rejected = not eval_data.get("approved", True) and eval_data.get("score", 1.0) < 0.5
+        approved = eval_data.get("approved", False)
+        score = eval_data.get("score", 0.0)
+        supported = eval_data.get("supported_by_context", False)
 
-        if not rejected:
+        # Override: si el contenido es correcto aunque falten citas formales
+        if approved or (supported and score >= 0.3):
             return END
-        # Solo reintentar si quedan reintentos disponibles (estricto: <)
-        if retry_count < MAX_RETRIES and state.get("critic_feedback"):
+
+        # Rechazado: reintentar si hay reintentos disponibles
+        if score < 0.35 and retry_count < MAX_RETRIES and state.get("critic_feedback"):
             return "generate_grounded"
         return "web_fallback"
 

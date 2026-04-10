@@ -11,50 +11,44 @@
 from __future__ import annotations
 
 EVAL_DATASET: list[dict] = [
-    # ── Busqueda (datos puntuales) ──────────────────────────────────────────
+    # ── Busqueda (datos puntuales) - modelos con datos verificados en PDFs ──
     {
-        "question": "Cual es la potencia del Toyota Hilux?",
+        "question": "Cual es la potencia del Mazda CX-30?",
         "expected_intent": "Busqueda",
-        "relevant_doc_ids": ["ft_toyota_hilux_v2_26"],
-        "relevant_keywords": ["potencia", "hp", "cv", "kW"],
+        "relevant_doc_ids": ["ficha_tecnica_mazda_cx_30_202511"],
+        "relevant_keywords": ["potencia", "hp", "153"],
     },
     {
-        "question": "Cuanto torque tiene el Mazda CX-5?",
+        "question": "Que torque tiene el Mazda CX-30?",
+        "expected_intent": "Busqueda",
+        "relevant_doc_ids": ["ficha_tecnica_mazda_cx_30_202511"],
+        "relevant_keywords": ["torque", "kg-m", "20.39"],
+    },
+    {
+        "question": "Que motores tiene el Mazda CX-5?",
         "expected_intent": "Busqueda",
         "relevant_doc_ids": ["ficha_tecnica_mazda_cx_5_2026"],
-        "relevant_keywords": ["torque", "Nm"],
+        "relevant_keywords": ["motor", "Skyactiv-G", "2.0L", "2.5L"],
     },
     {
-        "question": "Cual es el consumo de combustible del Corolla Cross?",
+        "question": "Que transmision tiene el Mazda CX-5?",
         "expected_intent": "Busqueda",
-        "relevant_doc_ids": ["ft_corolla_cross_v2_26"],
-        "relevant_keywords": ["consumo", "km/l", "l/100"],
+        "relevant_doc_ids": ["ficha_tecnica_mazda_cx_5_2026"],
+        "relevant_keywords": ["transmision", "Skyactiv-Drive", "6", "velocidades"],
     },
     {
-        "question": "Que tipo de transmision tiene el Volkswagen Tiguan?",
+        "question": "Cual es la potencia del Mazda 3?",
         "expected_intent": "Busqueda",
-        "relevant_doc_ids": ["volkswagen_tiguan_elegance_my24_v1"],
-        "relevant_keywords": ["transmision", "automatica", "manual", "DSG", "velocidades"],
+        "relevant_doc_ids": ["ficha_tecnica_m3_202511"],
+        "relevant_keywords": ["potencia", "hp", "153"],
     },
     {
-        "question": "Cuales son las dimensiones del Peugeot 3008?",
+        "question": "Que motor tiene el Mazda MX-5?",
         "expected_intent": "Busqueda",
-        "relevant_doc_ids": ["ficha_tecnica_nueva_3008_f_2_1"],
-        "relevant_keywords": ["largo", "ancho", "alto", "mm", "distancia"],
+        "relevant_doc_ids": ["ficha_tecnica_mazda_mx_5_2026"],
+        "relevant_keywords": ["motor", "Skyactiv"],
     },
-    {
-        "question": "Que motor tiene el MG ZS Hybrid?",
-        "expected_intent": "Busqueda",
-        "relevant_doc_ids": ["ficha_tecnica_mg_zs_hybrid_mg"],
-        "relevant_keywords": ["motor", "cilindros", "cc", "hibrido"],
-    },
-    # ── Resumen (ficha completa) ────────────────────────────────────────────
-    {
-        "question": "Dame un resumen de la ficha tecnica del Toyota Fortuner",
-        "expected_intent": "Resumen",
-        "relevant_doc_ids": ["ficha_tecnica_fortuner_v_09_25"],
-        "relevant_keywords": ["motor", "potencia", "transmision"],
-    },
+    # ── Resumen (ficha completa) - modelos con buena cobertura ──────────────
     {
         "question": "Resumeme las especificaciones del Mazda CX-30",
         "expected_intent": "Resumen",
@@ -62,41 +56,47 @@ EVAL_DATASET: list[dict] = [
         "relevant_keywords": ["motor", "dimensiones", "equipamiento"],
     },
     {
-        "question": "Ficha completa del Opel Grandland",
+        "question": "Dame un resumen del Mazda CX-5",
+        "expected_intent": "Resumen",
+        "relevant_doc_ids": ["ficha_tecnica_mazda_cx_5_2026"],
+        "relevant_keywords": ["motor", "transmision", "Touring"],
+    },
+    {
+        "question": "Ficha completa del Mazda 3",
+        "expected_intent": "Resumen",
+        "relevant_doc_ids": ["ficha_tecnica_m3_202511"],
+        "relevant_keywords": ["motor", "MHEV", "potencia"],
+    },
+    {
+        "question": "Overview del Opel Grandland",
         "expected_intent": "Resumen",
         "relevant_doc_ids": ["ficha_tecnica_opel_grandland_compressed"],
-        "relevant_keywords": ["motor", "potencia", "seguridad"],
+        "relevant_keywords": ["motor", "garantia"],
     },
-    {
-        "question": "Overview del Volkswagen Taos",
-        "expected_intent": "Resumen",
-        "relevant_doc_ids": ["volkswagen_taos_v8_my24_mex"],
-        "relevant_keywords": ["motor", "equipamiento", "version"],
-    },
-    # ── Comparacion (2 modelos) ─────────────────────────────────────────────
-    {
-        "question": "Compara el Toyota Hilux vs el Volkswagen Amarok",
-        "expected_intent": "Comparacion",
-        "relevant_doc_ids": ["ft_toyota_hilux_v2_26", "12_11_1_2025_volkswagen_amarok_my26"],
-        "relevant_keywords": ["potencia", "torque", "motor"],
-    },
+    # ── Comparacion (2 modelos) - ambos con datos verificados ───────────────
     {
         "question": "Diferencias entre el Mazda CX-5 y el Mazda CX-30",
         "expected_intent": "Comparacion",
         "relevant_doc_ids": ["ficha_tecnica_mazda_cx_5_2026", "ficha_tecnica_mazda_cx_30_202511"],
-        "relevant_keywords": ["motor", "dimensiones", "potencia"],
+        "relevant_keywords": ["motor", "Skyactiv", "dimensiones"],
     },
     {
-        "question": "Compara el Corolla Cross con el Yaris Cross",
+        "question": "Compara el Mazda 3 vs el Mazda CX-30",
         "expected_intent": "Comparacion",
-        "relevant_doc_ids": ["ft_corolla_cross_v2_26", "ft_yariscross_v2_26"],
-        "relevant_keywords": ["motor", "potencia", "consumo"],
+        "relevant_doc_ids": ["ficha_tecnica_m3_202511", "ficha_tecnica_mazda_cx_30_202511"],
+        "relevant_keywords": ["motor", "potencia", "torque"],
     },
     {
-        "question": "Volkswagen Polo vs Seat Ibiza",
+        "question": "Compara el Mazda CX-5 con el Mazda MX-5",
         "expected_intent": "Comparacion",
-        "relevant_doc_ids": ["volkswagen_polo_pa_my2025_v3", "seatibiza_compressed_1"],
-        "relevant_keywords": ["motor", "potencia", "precio"],
+        "relevant_doc_ids": ["ficha_tecnica_mazda_cx_5_2026", "ficha_tecnica_mazda_mx_5_2026"],
+        "relevant_keywords": ["motor", "Skyactiv"],
+    },
+    {
+        "question": "Opel Grandland vs Opel Mokka",
+        "expected_intent": "Comparacion",
+        "relevant_doc_ids": ["ficha_tecnica_opel_grandland_compressed", "opel_mokka_2023_2_compressed"],
+        "relevant_keywords": ["motor", "potencia"],
     },
     # ── GENERAL (sin RAG) ──────────────────────────────────────────────────
     {

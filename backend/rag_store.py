@@ -16,6 +16,15 @@
 from __future__ import annotations
 
 import os
+
+# IMPORTANTE: forzar modo offline de HuggingFace ANTES de importar HuggingFaceEmbeddings.
+# Esto evita que sentence-transformers verifique updates del modelo en cada carga,
+# lo cual causa el bug "Cannot send a request, as the client has been closed" cuando
+# el cliente HTTP global se cierra entre llamadas.
+# El modelo all-MiniLM-L6-v2 ya esta cacheado localmente tras la primera ejecucion.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 import re
 import logging
 from pathlib import Path
