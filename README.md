@@ -543,6 +543,9 @@ cd rag-ing-ontologica && .\.venv\Scripts\Activate && cd backend && python test_k
 
 1. **Usuario** ingresa la consulta en el frontend
 2. **classify_intent** clasifica en Busqueda/Resumen/Comparacion/GENERAL
+   - **Regla critica**: si la pregunta menciona CUALQUIER marca o modelo del corpus
+     (Toyota, Hilux, CX-5, etc.), NUNCA es GENERAL — siempre Busqueda/Resumen/Comparacion
+   - GENERAL solo para preguntas conceptuales sin marca/modelo (ej: "que es un torque?")
 3. **query_transformer** detecta automaticamente si aplica HyDE o Decomposition (skip para Resumen/Comparacion)
 4. **react_agent** decide tools dinamicamente (vectorial MMR, KG, HyDE, etc.) en loop max 5 iteraciones
 5. **generate_grounded** genera respuesta preliminar con citas obligatorias

@@ -39,6 +39,17 @@ Regla de decisión:
   usa Búsqueda, Resumen o Comparación y needs_retrieval=true.
 - Si es conocimiento automotriz general que no depende del corpus, usa GENERAL y needs_retrieval=false.
 
+REGLA CRÍTICA — Mención de marca/modelo:
+- Si la consulta menciona CUALQUIER marca (Toyota, Mazda, Volkswagen, Peugeot, Opel, MG, Seat, etc.)
+  o CUALQUIER modelo específico (Hilux, CX-5, Golf, 3008, etc.), la consulta es SIEMPRE
+  Búsqueda/Resumen/Comparación con needs_retrieval=true. NUNCA es GENERAL.
+- Esto aplica incluso si la pregunta parece "conceptual" (ej: "¿De qué tipo es el Hilux?",
+  "¿Qué clase de vehículo es el CX-5?") — son Búsqueda porque dependen de datos del modelo.
+
+GENERAL solo aplica para preguntas SIN ningún modelo o marca específica del corpus.
+Ejemplos de GENERAL: "¿qué es un torque?", "¿cómo funciona un motor turbo?",
+"¿qué significa CVT?", "¿diferencia entre 4x4 y AWD?".
+
 Regla de ambigüedad:
 - Si el usuario menciona modelo pero falta año/versión y puede haber variantes, mantén
   intent=Búsqueda y define clarification_question.

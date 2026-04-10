@@ -161,6 +161,24 @@ def _history_text(messages: List[BaseMessage], max_items: int = 8) -> str:
     return "\n".join(lines)
 
 
+def _sanitize_for_llm(text: str) -> str:
+    """Limpia texto antes de enviarlo a OpenAI.
+
+    Elimina caracteres de control y null bytes que rompen la serializacion JSON
+    del request body. Estos suelen venir de PDFs corruptos extraidos con OCR
+    o pdfplumber.
+    """
+    if not text:
+        return ""
+    # Eliminar caracteres de control excepto \n, \r, \t
+    cleaned = "".join(
+        c for c in text if c == "\n" or c == "\r" or c == "\t" or ord(c) >= 32
+    )
+    # Eliminar null bytes residuales
+    cleaned = cleaned.replace("\x00", "")
+    return cleaned
+
+
 def _retrieved_chunk_payload(docs: List[Document]) -> list[dict[str, Any]]:
     """Genera payload resumido de los chunks para trazabilidad y el critico."""
     chunks: list[dict[str, Any]] = []
@@ -556,7 +574,9 @@ def build_rag_graph():
                     f"Disponibles: {', '.join(tool_map.keys())}"
                 )
 
-            observation_str = str(observation)
+            # Sanitizar la observacion para evitar caracteres de control que
+            # rompan la serializacion JSON del request a OpenAI
+            observation_str = _sanitize_for_llm(str(observation))
 
             react_steps.append({
                 "step": i + 1,
@@ -636,9 +656,10 @@ def build_rag_graph():
         docs = state.get("docs", [])
         question = state["question"]
 
-        # Construir contexto desde los documentos recopilados por ReAct
+        # Construir contexto desde los documentos recopilados por ReAct.
+        # Sanitizar para eliminar caracteres de control que rompen JSON.
         context = "\n\n---\n\n".join(
-            d.page_content for d in docs if d.page_content.strip()
+            _sanitize_for_llm(d.page_content) for d in docs if d.page_content.strip()
         )
 
         # Si no hay contexto, retornar mensaje de "no encontrado"
@@ -894,7 +915,7 @@ def build_rag_graph():
         eval_mode = state.get("eval_mode", False)
         if eval_mode and answer.strip() and docs:
             context = "\n\n---\n\n".join(
-                d.page_content[:500] for d in docs if d.page_content.strip()
+                _sanitize_for_llm(d.page_content[:500]) for d in docs if d.page_content.strip()
             )
             metricas["llm_judge"] = compute_llm_judge_metrics(
                 question=question,

@@ -126,7 +126,7 @@ class QueryTransformation(BaseModel):
     """
 
     needs_hyde: bool
-    hyde_reason: str = Field(min_length=1, max_length=240)
+    hyde_reason: str = Field(default="", max_length=240)
     needs_decomposition: bool
     sub_queries: list[str] = Field(default_factory=list)
-    decomposition_reason: str = Field(min_length=1, max_length=240)
+    decomposition_reason: str = Field(default="", max_length=240)
